@@ -1,0 +1,235 @@
+@import "tailwindcss";
+
+/*
+ * TRAIN OR FIRE — design tokens.
+ *
+ * Light throughout, on all three surfaces. A projector in a lit meeting room
+ * reads better on warm white than on black, and the product should feel like a
+ * leadership workshop rather than a control room. Nothing here inherits the
+ * viewer's OS theme: every device in the room must show the same thing.
+ *
+ * The two decision colours are load-bearing, so they are stated once and used
+ * everywhere — and never on their own. TRAIN and FIRE always carry their word
+ * and their mark alongside the colour.
+ */
+@theme {
+  /* Surfaces — warm, paper-like, never grey-blue */
+  --color-paper: #faf8f4;
+  --color-paper-2: #f2eee7;
+  --color-paper-3: #e9e3d9;
+  --color-surface: #ffffff;
+
+  /* Ink — warm near-black rather than pure black */
+  --color-ink: #12100e;
+  --color-ink-2: #4a453e;
+  /* Every ink step below clears 4.5:1 on --color-paper. */
+  --color-ink-3: #6b6459;
+  --color-rule: #ddd6ca;
+  --color-rule-2: #ebe5db;
+
+  /*
+   * TRAIN — a deep, restrained green. Chosen over a bright "success" green so
+   * that keeping someone reads as a considered decision, not a reward.
+   */
+  --color-train: #1f6f52;
+  --color-train-deep: #14503a;
+  --color-train-lift: #2f8f6b;
+  --color-train-wash: #eaf2ed;
+  --color-train-edge: #c3ddd0;
+
+  /*
+   * FIRE — a strong, slightly earthy red. Strong enough to carry the weight of
+   * the decision; short of the neon red that would read as an error state.
+   */
+  --color-fire: #c2352a;
+  --color-fire-deep: #93231b;
+  --color-fire-lift: #d9584c;
+  --color-fire-wash: #fbeceb;
+  --color-fire-edge: #f0cdc9;
+
+  /* Supporting neutral used for structure and "still deciding" states */
+  --color-graphite: #2a2724;
+  --color-signal: #a8741c;
+  --color-signal-wash: #fdf3e2;
+
+  /* Type */
+  --font-display: var(--font-archivo), "Helvetica Neue", Arial, sans-serif;
+  --font-sans: var(--font-archivo), "Helvetica Neue", Arial, sans-serif;
+  --font-quote: var(--font-instrument-serif), Georgia, "Times New Roman", serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
+
+  /*
+   * Projector type scale.
+   *
+   * Sized against BOTH axes: `min(vw, vh)` so a 1366×768 projector — where the
+   * height is the binding constraint — cannot produce a headline that is wide
+   * enough to fit and tall enough to push the rest of the stage off screen.
+   */
+  --text-stage-xs: clamp(0.8rem, min(1vw, 1.8vh), 1.2rem);
+  --text-stage-sm: clamp(1rem, min(1.4vw, 2.5vh), 1.75rem);
+  --text-stage-md: clamp(1.35rem, min(2.2vw, 4vh), 2.9rem);
+  --text-stage-lg: clamp(1.9rem, min(3.4vw, 6vh), 4.5rem);
+  --text-stage-xl: clamp(2.5rem, min(5.2vw, 9.5vh), 7rem);
+  --text-stage-2xl: clamp(3rem, min(7.5vw, 13.5vh), 10rem);
+  --text-stage-3xl: clamp(3.6rem, min(10vw, 18vh), 14rem);
+
+  /* Motion — one easing for entrances, one for moves between places */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out-soft: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* Depth — two levels, not five */
+  --shadow-lift: 0 1px 2px rgb(18 16 14 / 0.04), 0 10px 28px -14px rgb(18 16 14 / 0.16);
+  --shadow-raise: 0 2px 6px rgb(18 16 14 / 0.06), 0 30px 70px -28px rgb(18 16 14 / 0.28);
+}
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    /* The projector must never scroll sideways, at any resolution. */
+    overflow-x: hidden;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--color-graphite);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: var(--color-ink);
+    color: var(--color-paper);
+  }
+}
+
+@layer utilities {
+  /* Tabular figures wherever a number animates, so counters do not jitter. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+
+  /* The headline voice: heavy, tight, set to stack in two or three lines. */
+  .display {
+    font-family: var(--font-display);
+    font-weight: 800;
+    letter-spacing: -0.038em;
+    line-height: 0.88;
+    text-wrap: balance;
+  }
+
+  .display-loose {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: -0.022em;
+    line-height: 1.04;
+    text-wrap: balance;
+  }
+
+  /* Small structural labels. The only place small text is allowed on stage. */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+
+  .stage-eyebrow {
+    font-family: var(--font-mono);
+    font-size: clamp(0.68rem, min(0.85vw, 1.5vh), 1rem);
+    font-weight: 500;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+  }
+
+  .quote {
+    font-family: var(--font-quote);
+    font-style: italic;
+    letter-spacing: -0.012em;
+  }
+
+  .safe-bottom {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+
+  .safe-top {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+
+  /*
+   * Hairline rules rather than boxes. The brief rules out excessive borders,
+   * so structure is drawn with single lines and space instead of cards.
+   */
+  .rule-t {
+    border-top: 1px solid var(--color-rule);
+  }
+  .rule-b {
+    border-bottom: 1px solid var(--color-rule);
+  }
+}
+
+/* A slow ambient pulse for waiting states. Used sparingly. */
+@keyframes tof-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes tof-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 0.6em, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-breathe {
+  animation: tof-breathe 2.6s var(--ease-in-out-soft) infinite;
+}
+
+.animate-rise {
+  animation: tof-rise 0.5s var(--ease-out-soft) both;
+}
+
+/*
+ * Reduced motion: strip the journey, keep the destination. Bars still reach
+ * their final width and counters still land on their final number.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

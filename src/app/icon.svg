@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!--
+    The choice itself, reduced to two fields: train on the left, fire on the
+    right, with the room's decision line between them. The marks are the same
+    ones the app uses on screen, so a tab and the projector read as one thing.
+  -->
+  <rect width="32" height="32" rx="7" fill="#faf8f4" />
+  <path d="M4 4h11.2v24H4z" fill="#1f6f52" />
+  <path d="M16.8 4H28v24H16.8z" fill="#c2352a" />
+  <g stroke="#faf8f4" stroke-width="2.1" stroke-linecap="square" fill="none">
+    <path d="M9.6 21.5V11" />
+    <path d="M6.2 14.2 9.6 10.7l3.4 3.5" />
+    <path d="M19.3 12.7l5.4 6.6M24.7 12.7l-5.4 6.6" />
+  </g>
+</svg>

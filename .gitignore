@@ -1,0 +1,35 @@
+# dependencies
+/node_modules
+
+# builds
+/.next/
+/out/
+/build
+*.tsbuildinfo
+next-env.d.ts
+
+# secrets — never commit a database URL or a facilitator token
+.env
+.env.local
+.env.*.local
+.env*
+!.env.example
+
+# local session snapshots (development store) and generated test data
+/.data
+/coverage
+/playwright-report
+/test-results
+/.playwright-mcp
+*.png
+
+# tooling
+/.vercel
+*.log
+npm-debug.log*
+.DS_Store
+*.pem
+
+# generated for AI agents by the Next build
+/AGENTS.md
+/CLAUDE.md
