@@ -174,14 +174,29 @@ Two production problems, and how the driver answers them:
 | Problem | Answer |
 | --- | --- |
 | Two people vote in the same millisecond | `SELECT … FOR UPDATE` inside a transaction. The second transaction blocks on the row, reads the first vote, and adds to it. |
-| The voter's instance is not the projector's instance | `LISTEN/NOTIFY` for speed, plus a revision poll scoped to the codes this instance has screens open for. Correctness comes from the poll; NOTIFY only makes it instant. |
+| A whole room votes the instant a decision opens | Queries go through the **pooled** endpoint. Every warm instance holds its own pool, so a cold burst against a direct endpoint exhausts connections — measured as 13 of 24 votes returning 500. |
+| The voter's instance is not the projector's instance | A revision poll scoped to the codes this instance has screens open for, with `LISTEN/NOTIFY` as an optional fast path. Correctness comes from the poll. |
+| A connection blinks mid-vote | Transport and contention faults (`08xxx`, `53300`, `40001`, `40P01`, …) retry up to three times. Application rejections — a closed question, a bad option — never retry. |
 
-That second row is the part worth being careful about. `LISTEN` needs a
-session-mode connection and a **transaction-mode pooler drops it silently** —
-no error, just a projector that never updates. So the hub tells the driver which
-codes it is serving (`SessionStore.setActiveCodes`) and the driver polls exactly
-those, by primary key, reading only the revision. One index lookup per open
-session per tick, whether or not NOTIFY is working.
+Those middle two rows are where the care went.
+
+A **transaction pooler is the right home for the queries**: a transaction is its
+unit of work, so `BEGIN … SELECT … FOR UPDATE … COMMIT` stays pinned to one
+server connection and the row lock is exactly as strong as it looks. What a
+transaction pooler cannot carry is `LISTEN`, which it drops silently — no error,
+just a projector that never updates. So `LISTEN` gets its own direct connection
+via `TRAIN_FIRE_DATABASE_URL_DIRECT` when one is configured, and is skipped
+entirely when it is not.
+
+That is safe to skip because the hub tells the driver which codes it is serving
+(`SessionStore.setActiveCodes`) and the driver polls exactly those, by primary
+key, reading only the generated `revision` column. One index lookup per open
+session per tick.
+
+The schema is created only when `to_regclass` says the table is missing. Running
+its `DROP TRIGGER` / `CREATE TRIGGER` on every cold start would take an ACCESS
+EXCLUSIVE lock on the table precisely when a burst of new instances is trying to
+read it.
 
 `GET /api/health` reports which driver is live and whether `LISTEN` is
 connected. It deliberately reveals nothing about *which* database.
@@ -204,7 +219,8 @@ vercel deploy --prod
 
 | Variable | Scope | Why |
 | --- | --- | --- |
-| `TRAIN_FIRE_DATABASE_URL` | Production, **server only** | The source of truth. Never prefix with `NEXT_PUBLIC_`. |
+| `TRAIN_FIRE_DATABASE_URL` | Production, **server only** | The source of truth. Use the **pooled** endpoint. Never prefix with `NEXT_PUBLIC_`. |
+| `TRAIN_FIRE_DATABASE_URL_DIRECT` | Production, server only, optional | Session-mode URL, used only for `LISTEN`. Unset is supported — the poll covers it. |
 | `NEXT_PUBLIC_APP_URL` | Production only | What the join QR encodes. Leave unset locally and on previews so each points at itself. |
 
 ### What the QR encodes

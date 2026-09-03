@@ -17,6 +17,28 @@ export class CodeTakenError extends Error {
 const isLocal = (url: string) => /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(url);
 
 /**
+ * Failures worth trying again, and only those.
+ *
+ * A room does not lose a vote because a connection blinked, but it also must
+ * not silently retry a genuine rejection — a closed question stays closed. So
+ * this matches transport and contention faults by SQLSTATE and message, and
+ * nothing else. Anything the app itself threw (a SessionError, say) propagates
+ * on the first attempt.
+ */
+function isTransient(error: unknown): boolean {
+  const code = (error as { code?: string })?.code ?? "";
+  // 08xxx connection exceptions · 53300 too_many_connections ·
+  // 57P01 admin_shutdown · 40001 serialization_failure · 40P01 deadlock_detected
+  if (/^08|^53300$|^57P0|^40001$|^40P01$/.test(code)) return true;
+  const message = String((error as { message?: string })?.message ?? "");
+  return /Connection terminated|ECONNRESET|ETIMEDOUT|EPIPE|socket hang up|timeout exceeded when trying to connect|too many (connections|clients)/i.test(
+    message,
+  );
+}
+
+const jitter = (ms: number) => ms + Math.random() * ms * 0.4;
+
+/**
  * Production driver — used when TRAIN_FIRE_DATABASE_URL is set.
  *
  * Two things make this different from a single-node store, and both come from
@@ -49,8 +71,26 @@ export class PostgresStore implements SessionStore {
   private polling = false;
 
   private readonly pollMs: number;
+  /** Session-mode URL used only for LISTEN, when one is configured. */
+  private readonly listenUrl: string | null;
 
   constructor(private readonly connectionString: string) {
+    /*
+     * Queries go through whatever TRAIN_FIRE_DATABASE_URL points at — which on
+     * a managed provider should be the POOLED endpoint. Every warm instance
+     * holds its own pool, so on a cold burst (a room of phones voting the
+     * instant a session opens) a direct endpoint runs out of connections and
+     * the votes come back as 500s. A transaction pooler is built for exactly
+     * that shape, and it does not weaken the row lock: a transaction is its
+     * unit of work, so SELECT … FOR UPDATE … COMMIT stays pinned to one
+     * server connection from BEGIN to COMMIT.
+     *
+     * LISTEN is the one thing a transaction pooler cannot carry, so it gets
+     * its own direct connection when TRAIN_FIRE_DATABASE_URL_DIRECT is set,
+     * and is simply skipped when it is not. The revision poll is what makes
+     * that safe to skip.
+     */
+    this.listenUrl = process.env.TRAIN_FIRE_DATABASE_URL_DIRECT?.trim() || null;
     this.pool = new Pool({
       connectionString,
       // Deliberately small. Every warm instance holds its own pool, and a
@@ -74,14 +114,30 @@ export class PostgresStore implements SessionStore {
   }
 
   private async bootstrap(): Promise<void> {
-    try {
-      await this.pool.query(SCHEMA_SQL);
-    } catch (error) {
-      // The schema may already be applied by a role with rights this one does
-      // not have. Only give up if the table is genuinely unreachable.
-      await this.pool.query("SELECT 1 FROM tof_sessions LIMIT 1").catch(() => {
-        throw error;
-      });
+    /*
+     * Check before creating.
+     *
+     * The schema ends in DROP TRIGGER / CREATE TRIGGER, which takes an ACCESS
+     * EXCLUSIVE lock on the table. Running that unconditionally on every cold
+     * start means a burst of new instances all queue for an exclusive lock on
+     * the table everyone else is trying to read — so the first burst of a
+     * session is exactly when it hurts. One cheap catalogue lookup avoids the
+     * DDL entirely on all but the very first boot.
+     */
+    const { rows } = await this.pool.query<{ present: string | null }>(
+      "SELECT to_regclass('public.tof_sessions')::text AS present",
+    );
+    if (!rows[0]?.present) {
+      try {
+        await this.pool.query(SCHEMA_SQL);
+      } catch (error) {
+        // Another instance may have created it a moment ago, or an operator
+        // may hold rights this role does not. Only give up if the table is
+        // still genuinely unreachable.
+        await this.pool.query("SELECT 1 FROM tof_sessions LIMIT 1").catch(() => {
+          throw error;
+        });
+      }
     }
     // Best effort: if LISTEN is unavailable the poll covers us, so a failure
     // here must not stop the store from booting.
@@ -94,9 +150,13 @@ export class PostgresStore implements SessionStore {
 
   private async startListener(): Promise<void> {
     if (this.listener) return;
+    // No direct URL means no LISTEN. That is a supported configuration, not a
+    // degraded one: the poll already guarantees delivery.
+    const url = this.listenUrl;
+    if (!url) return;
     const client = new Client({
-      connectionString: this.connectionString,
-      ssl: isLocal(this.connectionString) ? undefined : { rejectUnauthorized: false },
+      connectionString: url,
+      ssl: isLocal(url) ? undefined : { rejectUnauthorized: false },
     });
 
     client.on("notification", (msg) => {
@@ -197,6 +257,32 @@ export class PostgresStore implements SessionStore {
   /* Store                                                             */
   /* ---------------------------------------------------------------- */
 
+  /**
+   * Runs `fn`, retrying only transport and contention faults.
+   *
+   * The unit of retry is the whole read-modify-write, not the query: a retried
+   * update re-reads the session under a fresh lock and re-applies the mutator
+   * to what it finds, so it can never resurrect a stale document. Mutators here
+   * are decisions about current state ("record this vote", "advance a beat"),
+   * which is what makes replaying one safe.
+   */
+  private async withRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await fn();
+      } catch (error) {
+        if (!isTransient(error)) throw error;
+        lastError = error;
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, jitter(120 * (attempt + 1))));
+        }
+      }
+    }
+    console.error(`[train-or-fire] ${label} failed after 3 attempts`, lastError);
+    throw lastError;
+  }
+
   async create(record: SessionRecord): Promise<SessionRecord> {
     await this.init();
     const { rowCount } = await this.pool.query(
@@ -213,15 +299,24 @@ export class PostgresStore implements SessionStore {
 
   async getByCode(code: string): Promise<SessionRecord | null> {
     await this.init();
-    const { rows } = await this.pool.query<{ data: SessionRecord }>(
-      "SELECT data FROM tof_sessions WHERE code = $1",
-      [code],
-    );
-    return rows[0]?.data ?? null;
+    return this.withRetry("getByCode", async () => {
+      const { rows } = await this.pool.query<{ data: SessionRecord }>(
+        "SELECT data FROM tof_sessions WHERE code = $1",
+        [code],
+      );
+      return rows[0]?.data ?? null;
+    });
   }
 
   async update<T>(code: string, mutator: Mutator<T>): Promise<UpdateResult<T> | null> {
     await this.init();
+    return this.withRetry("update", () => this.updateOnce(code, mutator));
+  }
+
+  private async updateOnce<T>(
+    code: string,
+    mutator: Mutator<T>,
+  ): Promise<UpdateResult<T> | null> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");

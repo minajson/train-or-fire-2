@@ -101,10 +101,15 @@ const results = await Promise.all(
     ),
   ),
 );
+const badFirst = results.filter((r) => r.status !== 200);
 check(
   "every concurrent vote was accepted",
-  results.every((r) => r.status === 200),
-  `${results.filter((r) => r.status === 200).length}/${PEOPLE} ok`,
+  badFirst.length === 0,
+  badFirst.length
+    ? `${PEOPLE - badFirst.length}/${PEOPLE} ok; rejected: ${badFirst
+        .map((r) => `${r.status} ${JSON.stringify(r.data).slice(0, 80)}`)
+        .join(" | ")}`
+    : `${PEOPLE}/${PEOPLE} ok`,
 );
 
 const afterConcurrent = await get(`/api/sessions/${code}`);
@@ -133,10 +138,11 @@ const ROLES = [
   { id: "decide-operations", q: "role-operations", fire: 16 },
   { id: "decide-maintenance", q: "role-maintenance", fire: 15 },
 ];
+const rejected = [];
 for (const role of ROLES) {
   const idx = await stageOf(role.id);
   await post(`/api/sessions/${code}/control`, { command: { type: "goto", stageIndex: idx } }, hostHdr);
-  await Promise.all(
+  const outcomes = await Promise.all(
     people.map((p, i) =>
       post(
         `/api/sessions/${code}/vote`,
@@ -145,8 +151,18 @@ for (const role of ROLES) {
       ),
     ),
   );
+  for (const o of outcomes) {
+    if (o.status !== 200) rejected.push(`${role.q} -> ${o.status} ${JSON.stringify(o.data).slice(0, 90)}`);
+  }
+  const recorded = (await get(`/api/sessions/${code}`)).data.counts.responses;
+  check(
+    `every concurrent vote on ${role.q} was recorded`,
+    recorded === PEOPLE,
+    `${recorded}/${PEOPLE}`,
+  );
   await post(`/api/sessions/${code}/control`, { command: { type: "reveal" } }, hostHdr);
 }
+if (rejected.length) console.log("  rejected votes:\n    " + rejected.join("\n    "));
 
 const fullBoard = (await get(`/api/sessions/${code}`)).data.board;
 const boardShape = fullBoard.map((b) => `${b.roleId}:${b.verdict}`).join(",");
