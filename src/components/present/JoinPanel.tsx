@@ -26,7 +26,17 @@ export function CornerJoin({ origin, code }: { origin: string; code: string }) {
       transition={ENTER}
       className="absolute bottom-[3vh] right-[3vw] flex items-center gap-3 rounded-xl bg-surface p-2.5 shadow-lift"
     >
-      <QrCode value={joinUrl(origin, code)} size={256} className="h-[8vh] w-[8vh] min-h-14 min-w-14" />
+      {/*
+        Smaller in-image margin than the default: this code sits on its own
+        white card whose padding is real quiet zone, and at 8vh every module
+        that goes to margin comes off the modules a camera has to resolve.
+      */}
+      <QrCode
+        value={joinUrl(origin, code)}
+        size={256}
+        margin={2}
+        className="h-[8vh] w-[8vh] min-h-14 min-w-14"
+      />
       <div className="pr-1">
         <div className="eyebrow text-ink-3">Join</div>
         <div className="font-mono text-[max(1.1rem,1.6vh)] font-semibold leading-none tracking-tight tnum">

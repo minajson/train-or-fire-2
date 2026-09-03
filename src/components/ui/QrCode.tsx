@@ -15,8 +15,13 @@ export function QrCode({
   className,
   dark = "#12100e",
   light = "#ffffff",
-  /** Quiet-zone width in modules. Scanners need clear space around the code. */
-  margin = 1,
+  /**
+   * Quiet-zone width in modules. The QR standard asks for 4, and a code that
+   * is going to be photographed off a projected surface — with keystone, glare
+   * and a phone held at an angle — is exactly the case the margin exists for.
+   * Callers that sit the code on their own white card can pass less.
+   */
+  margin = 4,
 }: {
   value: string;
   size?: number;
