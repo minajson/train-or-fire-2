@@ -33,3 +33,4 @@ npm-debug.log*
 # generated for AI agents by the Next build
 /AGENTS.md
 /CLAUDE.md
+.vercel
