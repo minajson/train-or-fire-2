@@ -23,7 +23,7 @@ export function VerdictStage({ state }: { state: PublicSessionState }) {
         <h1 className="display text-stage-xl">This is our verdict.</h1>
       </Rise>
 
-      <div className="mt-[4vh] grid min-h-0 flex-1 grid-cols-2 gap-[2vw]">
+      <div className="mt-[4cqh] grid min-h-0 flex-1 grid-cols-2 gap-[2cqw]">
         <VerdictZone verdict="train" livePct={null} placed={trainPlaced} compact />
         <VerdictZone verdict="fire" livePct={null} placed={firePlaced} compact />
       </div>
@@ -75,7 +75,7 @@ export function TwistStage({ beat }: { beat: number }) {
               initial={{ opacity: 0, y: 34 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ ...ENTER, delay: 0.22 }}
-              className="display mt-[3vh] text-stage-3xl text-fire"
+              className="display mt-[3cqh] text-stage-3xl text-fire"
             >
               Did you fix
               <br />

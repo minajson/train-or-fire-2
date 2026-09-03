@@ -61,6 +61,9 @@ export function buildPublicState(
     stage,
     beat: clampBeat(session.stageIndex, session.beat),
     phase,
+    // A stage carries a question or it does not; there is no third case, and
+    // no per-screen exceptions.
+    requiresParticipantResponse: Boolean(question),
     overlay: session.overlay ?? null,
     counts: {
       total: participants.length,

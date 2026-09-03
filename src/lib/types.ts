@@ -136,6 +136,15 @@ export interface PublicSessionState {
   stage: Stage | null;
   beat: number;
   phase: Phase;
+  /**
+   * Whether the screen currently on the projector is one the room can answer.
+   *
+   * This is the single rule that decides whether the join QR is up. Stated once
+   * here, on the state every surface already reads, rather than re-derived per
+   * screen — a question that forgets to show the code is a latecomer who cannot
+   * join, and that is not a mistake worth leaving room for.
+   */
+  requiresParticipantResponse: boolean;
   overlay: Overlay;
   counts: LiveCounts;
   settings: SessionSettings;

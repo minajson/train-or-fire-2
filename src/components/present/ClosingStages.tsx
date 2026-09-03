@@ -19,7 +19,7 @@ export function LearningStage({ index, beat }: { index: number; beat: number }) 
         {String(index + 1).padStart(2, "0")} / {String(LEARNINGS.length).padStart(2, "0")}
       </div>
 
-      <h1 className="display mt-[3vh] text-stage-2xl">
+      <h1 className="display mt-[3cqh] text-stage-2xl">
         {learning.headline.map((line, i) => (
           <Rise key={line} delay={i * 0.1}>
             {line}
@@ -29,9 +29,9 @@ export function LearningStage({ index, beat }: { index: number; beat: number }) 
 
       <AnimatePresence>
         {beat >= 1 ? (
-          <Rise className="mt-[5vh] max-w-[64vw]">
-            <div className="h-px w-[30vw] max-w-[440px] bg-rule" />
-            <p className="display-loose mt-[3vh] text-stage-md text-ink-2">
+          <Rise className="mt-[5cqh] max-w-[64cqw]">
+            <div className="h-px w-[30cqw] max-w-[440px] bg-rule" />
+            <p className="display-loose mt-[3cqh] text-stage-md text-ink-2">
               {learning.body}
             </p>
           </Rise>
@@ -75,21 +75,21 @@ export function CostRealityStage({ beat }: { beat: number }) {
         <p className="quote text-stage-sm text-ink-3">
           “We couldn&rsquo;t afford the maintenance.”
         </p>
-        <h1 className="display mt-[2vh] text-stage-2xl">
+        <h1 className="display mt-[2cqh] text-stage-2xl">
           Can we afford
           <br />
           the failure?
         </h1>
       </Rise>
 
-      <ul className="mt-[5vh] flex min-h-0 flex-1 flex-col justify-start gap-[0.4vh] border-l-2 border-fire pl-[2vw]">
+      <ul className="mt-[5cqh] flex min-h-0 flex-1 flex-col justify-start gap-[0.4cqh] border-l-2 border-fire pl-[2cqw]">
         {COST_ITEMS.map((item, i) => (
           <motion.li
             key={item}
             initial={false}
             animate={{ opacity: i < shown ? 1 : 0, x: i < shown ? 0 : -14 }}
             transition={ENTER}
-            className="display-loose py-[0.9vh] text-stage-md"
+            className="display-loose py-[0.9cqh] text-stage-md"
           >
             {item}
           </motion.li>
@@ -113,9 +113,9 @@ export function FinalMachineStage({ beat }: { beat: number }) {
 
       <AnimatePresence>
         {beat >= 1 ? (
-          <Rise className="mt-[6vh]">
-            <div className="h-px w-[36vw] max-w-[520px] bg-rule" />
-            <p className="display-loose mt-[3vh] text-stage-md text-ink-2">
+          <Rise className="mt-[6cqh]">
+            <div className="h-px w-[36cqw] max-w-[520px] bg-rule" />
+            <p className="display-loose mt-[3cqh] text-stage-md text-ink-2">
               Before the trip came
               <br />
               warnings, decisions, missed opportunities
@@ -133,7 +133,7 @@ export function TruthStage({ beat }: { beat: number }) {
   const shown = Math.min(FINAL_TRUTHS.length, beat + 1);
 
   return (
-    <StageFrame className="flex flex-col justify-center gap-[4vh]">
+    <StageFrame className="flex flex-col justify-center gap-[4cqh]">
       {FINAL_TRUTHS.map((truth, i) => {
         const last = i === FINAL_TRUTHS.length - 1;
         return (
@@ -152,8 +152,8 @@ export function TruthStage({ beat }: { beat: number }) {
             <p
               className={
                 last
-                  ? "display mt-[1vh] text-stage-xl text-fire"
-                  : "display mt-[1vh] text-stage-lg"
+                  ? "display mt-[1cqh] text-stage-xl text-fire"
+                  : "display mt-[1cqh] text-stage-lg"
               }
             >
               {truth.body.map((line) => (
@@ -181,9 +181,9 @@ export function ClosingStage({ beat }: { beat: number }) {
 
       <AnimatePresence>
         {beat >= 1 ? (
-          <Rise className="mt-[6vh]">
-            <div className="h-px w-[40vw] max-w-[600px] bg-rule" />
-            <p className="display-loose mt-[3.5vh] text-stage-lg text-ink-2">
+          <Rise className="mt-[6cqh]">
+            <div className="h-px w-[40cqw] max-w-[600px] bg-rule" />
+            <p className="display-loose mt-[3.5cqh] text-stage-lg text-ink-2">
               What would you do differently
               <br />
               before the next warning?

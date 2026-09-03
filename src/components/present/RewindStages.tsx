@@ -18,7 +18,7 @@ export function RewindStage({ beat }: { beat: number }) {
 
   return (
     <StageFrame className="flex flex-col">
-      <div className="flex items-baseline justify-between gap-[2vw]">
+      <div className="flex items-baseline justify-between gap-[2cqw]">
         <h1 className="display text-stage-lg">Let&rsquo;s rewind.</h1>
         <AnimatePresence>
           {opportunities > 0 ? (
@@ -40,7 +40,7 @@ export function RewindStage({ beat }: { beat: number }) {
         </AnimatePresence>
       </div>
 
-      <ChainView visibleCount={visible} className="mt-[3vh]" />
+      <ChainView visibleCount={visible} className="mt-[3cqh]" />
     </StageFrame>
   );
 }
@@ -66,7 +66,7 @@ export function ChainQuestionStage({ state }: { state: PublicSessionState }) {
 
   return (
     <StageFrame className="flex flex-col">
-      <div className="flex items-baseline justify-between gap-[2vw]">
+      <div className="flex items-baseline justify-between gap-[2cqw]">
         <h1 className="display max-w-[62%] text-stage-lg">
           Where should the chain have been broken?
         </h1>
@@ -74,7 +74,7 @@ export function ChainQuestionStage({ state }: { state: PublicSessionState }) {
           <div className="display tnum shrink-0 text-stage-md text-ink-2">
             {state.counts.responses}
             <span className="text-ink-3"> / {state.counts.total}</span>
-            <span className="stage-eyebrow ml-[0.8vw] text-ink-3">Decided</span>
+            <span className="stage-eyebrow ml-[0.8cqw] text-ink-3">Decided</span>
           </div>
         ) : (
           <div className="stage-eyebrow shrink-0 text-ink-3">
@@ -87,7 +87,7 @@ export function ChainQuestionStage({ state }: { state: PublicSessionState }) {
         visibleCount={CHAIN.length}
         pctByLink={pctByLink}
         winnerLink={winner}
-        className="mt-[3vh]"
+        className="mt-[3cqh]"
       />
     </StageFrame>
   );
@@ -113,7 +113,7 @@ export function SystemStage({ beat }: { beat: number }) {
         <p className="display-loose text-stage-sm text-ink-3">
           You fired the people.
         </p>
-        <h1 className="display mt-[1.5vh] text-stage-xl">
+        <h1 className="display mt-[1.5cqh] text-stage-xl">
           Did you fix
           <br />
           the system?
@@ -123,7 +123,7 @@ export function SystemStage({ beat }: { beat: number }) {
       <motion.ul
         animate={{ opacity: answered ? 0.42 : 1 }}
         transition={ENTER}
-        className="mt-[4vh] space-y-[1.6vh]"
+        className="mt-[4cqh] space-y-[1.6cqh]"
       >
         {SYSTEM_REPLACEMENTS.map((item, i) => (
           <motion.li
@@ -131,7 +131,7 @@ export function SystemStage({ beat }: { beat: number }) {
             initial={false}
             animate={{ opacity: i < shown ? 1 : 0, y: i < shown ? 0 : 12 }}
             transition={ENTER}
-            className="flex flex-wrap items-baseline gap-x-[1.6vw] gap-y-[0.4vh]"
+            className="flex flex-wrap items-baseline gap-x-[1.6cqw] gap-y-[0.4cqh]"
           >
             <span
               className={cn(

@@ -323,6 +323,103 @@ check(
   `${returned.data.phase}`,
 );
 
+/* ---- Next cannot skip an unrevealed result ------------------------ */
+
+/*
+ * The facilitator is meant to be able to run the whole session on one key. That
+ * only holds if the one key cannot walk past a vote the room just cast, so on
+ * an unrevealed question Next reveals and stays put; the press after that moves
+ * on. This is the single most load-bearing behaviour of the simplified console.
+ */
+await post(
+  `/api/sessions/${code}/control`,
+  { command: { type: "goto", stageIndex: engineerStage } },
+  hostHdr,
+);
+await post(`/api/sessions/${code}/control`, { command: { type: "unlock" } }, hostHdr);
+
+const beforeSmartNext = (await get(`/api/sessions/${code}`)).data;
+await post(`/api/sessions/${code}/control`, { command: { type: "next" } }, hostHdr);
+const afterFirstNext = (await get(`/api/sessions/${code}`)).data;
+check(
+  "Next on an open decision reveals instead of advancing",
+  beforeSmartNext.phase === "voting" &&
+    afterFirstNext.phase === "revealed" &&
+    afterFirstNext.stageIndex === engineerStage,
+  `phase ${beforeSmartNext.phase} -> ${afterFirstNext.phase}, stage ${afterFirstNext.stageIndex}`,
+);
+
+await post(`/api/sessions/${code}/control`, { command: { type: "next" } }, hostHdr);
+const afterSecondNext = (await get(`/api/sessions/${code}`)).data;
+check(
+  "the next press then moves on, with the result kept",
+  afterSecondNext.stageIndex === engineerStage + 1 &&
+    (await get(`/api/sessions/${code}`)).data.board.some((b) => b.roleId === "engineer"),
+  `stage ${afterSecondNext.stageIndex}`,
+);
+
+await post(`/api/sessions/${code}/control`, { command: { type: "back" } }, hostHdr);
+const afterBackToRevealed = (await get(`/api/sessions/${code}`)).data;
+check(
+  "Back does not reopen voting on a revealed decision",
+  afterBackToRevealed.stageIndex === engineerStage && afterBackToRevealed.phase === "revealed",
+  `stage ${afterBackToRevealed.stageIndex} phase ${afterBackToRevealed.phase}`,
+);
+
+/* ---- the join-code rule is stated in state, not per screen -------- */
+
+/*
+ * The projector shows the QR from exactly one field. If this contract drifts, a
+ * question goes up with no way for a latecomer to join it.
+ */
+const hostProgress = (await get(`/api/sessions/${code}/control`, hostHdr)).data.progress;
+let qrRuleHolds = true;
+const qrChecked = [];
+for (const row of hostProgress) {
+  await post(
+    `/api/sessions/${code}/control`,
+    { command: { type: "goto", stageIndex: row.stageIndex } },
+    hostHdr,
+  );
+  const st = (await get(`/api/sessions/${code}`)).data;
+  const expected = Boolean(row.questionId);
+  qrChecked.push(row.stageId);
+  if (st.requiresParticipantResponse !== expected) {
+    qrRuleHolds = false;
+    console.log(`      ${row.stageId}: expected ${expected}, got ${st.requiresParticipantResponse}`);
+  }
+}
+check(
+  "requiresParticipantResponse is true on exactly the question stages",
+  qrRuleHolds,
+  `${qrChecked.length} stages checked`,
+);
+
+/* ---- every stage declares which briefing the shell should show ---- */
+
+const panels = new Set();
+for (const row of hostProgress) {
+  await post(
+    `/api/sessions/${code}/control`,
+    { command: { type: "goto", stageIndex: row.stageIndex } },
+    hostHdr,
+  );
+  panels.add((await get(`/api/sessions/${code}`)).data.stage?.panel);
+}
+check(
+  "every stage carries a valid panel mode for the persistent shell",
+  [...panels].every((p) => ["briefing", "known", "quiet"].includes(p)),
+  [...panels].join(", "),
+);
+
+// Those two sweeps walked the whole activity; put the room back on the role the
+// checks below are written against.
+await post(
+  `/api/sessions/${code}/control`,
+  { command: { type: "goto", stageIndex: engineerStage } },
+  hostHdr,
+);
+
 /* ---- the join overlay leaves the session alone -------------------- */
 
 const beforeOverlay = await get(`/api/sessions/${code}`);
@@ -398,16 +495,17 @@ check(
  */
 await post(`/api/sessions/${code}/control`, { command: { type: "goto", stageIndex: 0, beat: 0 } }, hostHdr);
 
-const boardBefore = JSON.stringify((await get(`/api/sessions/${code}`)).data.board);
 const totalStages = (await get(`/api/sessions/${code}`)).data.stageCount;
 
 let presses = 0;
-let last = { stageIndex: -1, beat: -1 };
+let last = { stageIndex: -1, beat: -1, phase: null };
 for (let i = 0; i < 200; i += 1) {
   await post(`/api/sessions/${code}/control`, { command: { type: "next" } }, hostHdr);
   const st = (await get(`/api/sessions/${code}`)).data;
-  if (st.stageIndex === last.stageIndex && st.beat === last.beat) break;
-  last = { stageIndex: st.stageIndex, beat: st.beat };
+  const same =
+    st.stageIndex === last.stageIndex && st.beat === last.beat && st.phase === last.phase;
+  if (same) break;
+  last = { stageIndex: st.stageIndex, beat: st.beat, phase: st.phase };
   presses += 1;
 }
 
@@ -416,6 +514,10 @@ check(
   last.stageIndex === totalStages - 1 && presses > totalStages,
   `${presses} presses, ended at stage ${last.stageIndex + 1}/${totalStages}`,
 );
+
+// Captured after the forward walk: Next reveals what it passes, so this is the
+// state Back has to preserve.
+const boardAtEnd = (await get(`/api/sessions/${code}`)).data.board;
 
 let backPresses = 0;
 for (let i = 0; i < 200; i += 1) {
@@ -427,14 +529,19 @@ for (let i = 0; i < 200; i += 1) {
 
 const end = (await get(`/api/sessions/${code}`)).data;
 check(
-  "Back walks all the way home in the same number of presses",
-  backPresses === presses && end.stageIndex === 0 && end.beat === 0,
-  `${backPresses} back vs ${presses} forward`,
+  "Back walks all the way home",
+  end.stageIndex === 0 && end.beat === 0,
+  `${backPresses} presses back, ${presses} forward`,
 );
 check(
-  "a full round trip leaves every verdict untouched",
-  JSON.stringify(end.board) === boardBefore,
-  `${end.board.length} on board`,
+  "a forward walk reveals every decision it passes",
+  boardAtEnd.length === 4,
+  `${boardAtEnd.length} verdicts on the board at the end`,
+);
+check(
+  "walking all the way back leaves every verdict untouched",
+  JSON.stringify(end.board) === JSON.stringify(boardAtEnd),
+  `${end.board.length} on board after, ${boardAtEnd.length} before`,
 );
 
 ac.abort();

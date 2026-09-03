@@ -4,45 +4,6 @@ import { cn } from "@/lib/cn";
 import { getQuestion, getRole } from "@/lib/content/activity";
 import type { FacilitatorState } from "@/lib/types";
 
-export function LiveStats({ state }: { state: FacilitatorState }) {
-  const question = getQuestion(state.stage?.questionId);
-  const decided = state.counts.responses;
-  const pct = state.counts.total > 0 ? Math.round((decided / state.counts.total) * 100) : 0;
-
-  return (
-    <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-rule sm:grid-cols-4">
-      <Stat label="In session" value={state.counts.total} />
-      <Stat label="In the room" value={state.counts.room} />
-      <Stat label="Online" value={state.counts.online} />
-      <Stat
-        label={question ? "Decided" : "No vote here"}
-        value={question ? `${decided}/${state.counts.total}` : "—"}
-        hint={question ? `${pct}%` : undefined}
-      />
-    </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string | number;
-  hint?: string;
-}) {
-  return (
-    <div className="bg-surface px-4 py-3">
-      <div className="eyebrow text-ink-3">{label}</div>
-      <div className="mt-1 flex items-baseline gap-2">
-        <span className="display tnum text-2xl leading-none">{value}</span>
-        {hint ? <span className="text-xs text-ink-3 tnum">{hint}</span> : null}
-      </div>
-    </div>
-  );
-}
-
 /**
  * The split, before the room sees it.
  *

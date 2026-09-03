@@ -1,13 +1,13 @@
 "use client";
 
-import { AnimatePresence } from "framer-motion";
-import { useEffect, useRef } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { useCallback, useEffect, useRef } from "react";
 import { useJoinOrigin } from "@/lib/client/app-url";
-import { useSessionStream } from "@/lib/client/useSession";
+import { useStoredValue } from "@/lib/client/browser-state";
+import { facilitatorKey, useSessionStream } from "@/lib/client/useSession";
 import { CHAIN, CHAIN_QUESTION_ID, getRole } from "@/lib/content/activity";
 import { SoundProvider, useSound } from "@/lib/sound/SoundProvider";
-import type { PublicSessionState } from "@/lib/types";
-import { ChainQuestionStage, RewindStage, SystemStage } from "./RewindStages";
+import type { ControlCommand, PublicSessionState } from "@/lib/types";
 import {
   ClosingStage,
   CostClaimStage,
@@ -18,8 +18,10 @@ import {
 } from "./ClosingStages";
 import { DecisionStage } from "./DecisionStage";
 import { FinalPollStage } from "./FinalPollStage";
-import { CornerJoin, JoinOverlay } from "./JoinPanel";
+import { JoinOverlay } from "./JoinPanel";
 import { IncidentStage, JoinStage, OpeningStage, PreludeStage } from "./OpeningStages";
+import { ProjectorShell, StageNav } from "./ProjectorShell";
+import { ChainQuestionStage, RewindStage, SystemStage } from "./RewindStages";
 import { StageFrame } from "./StageFrame";
 import { TwistStage, VerdictStage } from "./VerdictStage";
 
@@ -37,41 +39,97 @@ function Projector({ code, state }: { code: string; state: PublicSessionState | 
   const origin = useJoinOrigin();
   useProjectorSound(state);
 
+  /*
+   * The projector is usually a second window on the facilitator's own laptop.
+   * When it is, the token for this session is already in local storage and the
+   * arrows become real controls — one less device to reach for. On a machine
+   * that is only ever a display they stay quiet affordances.
+   */
+  const token = useStoredValue(facilitatorKey(code));
+  const send = useCallback(
+    (command: ControlCommand) => {
+      if (!token) return;
+      void fetch(`/api/sessions/${encodeURIComponent(code)}/control`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-facilitator-token": token },
+        body: JSON.stringify({ command }),
+      }).catch(() => {});
+    },
+    [code, token],
+  );
+
+  useEffect(() => {
+    if (!token) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "ArrowRight" || e.key === "PageDown") {
+        e.preventDefault();
+        send({ type: "next" });
+      } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
+        e.preventDefault();
+        send({ type: "back" });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [token, send]);
+
   if (!state) {
     return (
-      <StageFrame className="flex items-center justify-center">
+      <div className="flex h-dvh items-center justify-center bg-paper">
         <div className="stage-eyebrow animate-breathe text-ink-3">Connecting</div>
-      </StageFrame>
+      </div>
     );
   }
 
   const stage = state.stage;
-
-  /*
-   * The corner code appears only while a decision is actually open. During a
-   * reveal, the AAR, a learning screen or the close, it would be one more thing
-   * competing with the single idea the screen is carrying — so it is not there.
-   */
-  const showCornerQr =
-    state.settings.showQr &&
-    Boolean(stage?.questionId) &&
-    state.phase === "voting" &&
-    state.overlay !== "join";
+  const atStart = state.stageIndex === 0 && state.beat === 0;
+  const atEnd = state.stageIndex === state.stageCount - 1 && state.beat === (stage?.beats ?? 1) - 1;
 
   return (
-    <div className="relative h-dvh w-full overflow-hidden">
-      {renderStage(state, origin)}
-
-      <AnimatePresence>
-        {showCornerQr ? <CornerJoin key="corner" origin={origin} code={code} /> : null}
+    <ProjectorShell
+      panel={stage?.panel ?? "quiet"}
+      /*
+       * The one rule for the join code: if the room can answer what is on
+       * screen, the code is up. No per-screen exceptions, and it does not go
+       * away on reveal — a latecomer arriving mid-result still needs to be in
+       * before the next decision opens.
+       */
+      showJoin={state.requiresParticipantResponse && state.settings.showQr}
+      origin={origin}
+      code={code}
+      counts={state.counts}
+      live={state.status === "live"}
+      overlay={
+        <AnimatePresence>
+          {state.overlay === "join" ? (
+            <JoinOverlay key="overlay" origin={origin} code={code} />
+          ) : null}
+        </AnimatePresence>
+      }
+      nav={
+        <StageNav
+          interactive={Boolean(token)}
+          canBack={!atStart}
+          canNext={!atEnd}
+          onBack={() => send({ type: "back" })}
+          onNext={() => send({ type: "next" })}
+        />
+      }
+    >
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={state.stageIndex}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.22 }}
+          className="h-full w-full"
+        >
+          {renderStage(state, origin)}
+        </motion.div>
       </AnimatePresence>
-
-      <AnimatePresence>
-        {state.overlay === "join" ? (
-          <JoinOverlay key="overlay" origin={origin} code={code} />
-        ) : null}
-      </AnimatePresence>
-    </div>
+    </ProjectorShell>
   );
 }
 

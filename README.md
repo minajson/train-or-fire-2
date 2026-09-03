@@ -58,27 +58,87 @@ lands all four on one side would never show the layout a real room produces.
 
 | Surface | Route | For |
 | --- | --- | --- |
-| Projector | `/present/<code>` | The room. Full-bleed, never scrolls, no chrome. |
+| Projector | `/present/<code>` | The room. One persistent shell, never scrolls. |
 | Participant | `/j/<code>` | Phones. One decision, two enormous controls. |
-| Facilitator | `/host/<code>` | The console: transport, live counts, private notes. |
+| Facilitator | `/host/<code>` | Back, Reveal, Next — and a live view of the projector. |
 
 All three read the same live state over one SSE connection each, so they cannot
 drift apart.
 
+### The projector is one screen
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│ TRAIN OR FIRE                              ● LIVE · 34 JOINED │
+├──────────────────┬────────────────────────────────────────────┤
+│ THE INCIDENT     │  DECISION 03 / 04         30 / 31 DECIDED   │
+│                  │                                            │
+│ A critical …     │  Operations Manager                        │
+│ …abnormal        │  Wouldn't stop production early.           │
+│  readings…       │  “The readings weren't at trip level yet.” │
+│                  │                                            │
+│                  │  ┌── ↑ TRAIN ──┐  ┌── ✕ FIRE ──┐           │
+│ ────────────     │  │             │  │            │           │
+│ [ QR ]  JOIN     │  │ Engineer 71%│  │            │           │
+│         6730     │  │ Finance  63%│  │            │      ← →  │
+└──────────────────┴────────────────────────────────────────────┘
+```
+
+The shell never changes. Only the right-hand stage does. There is no page
+transition anywhere in the session, which is what lets the room feel it stayed
+inside one experience from the first decision through the AAR.
+
+The left column has three modes, declared per stage as `panel`:
+
+| Mode | Shows | Used by |
+| --- | --- | --- |
+| `briefing` | The incident, with a few phrases in bold | The four decisions, the verdict |
+| `known` | The compressed facts | The AAR |
+| `quiet` | Nothing — the column collapses | The single-sentence screens and the close |
+
+`quiet` is why "DID YOU FIX THE PROBLEM?" still gets the whole projector: the
+architecture persists, the furniture gets out of the way.
+
+Type on both panels is sized in **container units**, not viewport units, so a
+headline sizes against the column it lives in rather than the window. One
+warning from doing this: container-query units inside a container's *own*
+padding resolve against the nearest **ancestor** container — the viewport, if
+there is none. Putting `px-[7cqw]` on the briefing column itself gave it 95px of
+side padding on a 410px column and squeezed its text to the 16px floor. The
+padding belongs on an inner wrapper.
+
+### When the join code is up
+
+One rule, stated once in `PublicSessionState.requiresParticipantResponse` and
+read by the shell:
+
+> If the room can answer what is on screen, the code is up.
+
+No per-screen exceptions, and it does not disappear on reveal — a latecomer
+arriving mid-result still needs to be in before the next decision opens. It is
+absent only on the screens nobody can answer: the verdict, the AAR narrative,
+the learning reveals, the cost screens, the close.
+
 ### Facilitator keys
 
-A presentation remote sends arrow keys, so the whole activity can be driven
-without looking at the console:
+A presentation remote sends arrow keys, so the whole activity runs without
+looking at the console. The same keys work on the projector window itself when
+it is open on the facilitator's machine.
 
 | Key | Action |
 | --- | --- |
-| `→` / `PageDown` | Next beat, then next stage |
+| `→` / `PageDown` | Next |
 | `←` / `PageUp` | Back |
 | `R` | Reveal |
-| `L` / `U` | Lock / unlock voting |
-| `Q` / `Esc` | Raise / lower the full-screen join code |
+| `Esc` | Lower the full-screen join code |
 
----
+**Next is not a dumb advance.** On a question nobody has revealed, Next reveals
+and stays put; the press after that moves on. A facilitator running the session
+on one key cannot walk past a vote the room just cast — which would lose the
+moment the whole activity is built around. Everything else a session might need
+(reopen voting, jump to a section, full-screen QR, restart, end) lives behind
+one `•••` menu, because a control that is only needed when something has gone
+wrong should not compete with the three that are needed every ninety seconds.
 
 ## How the activity is modelled
 
@@ -94,8 +154,13 @@ Two ideas carry the whole thing, both defined in
 `next` walks beats first and stages second; `back` returns to the *last* beat of
 the previous stage, so a chain you have already built comes back built.
 
-Nothing in `next`/`back`/`goto` touches votes or revealed phases, which is what
-makes the facilitator's Back button safe mid-session.
+Neither `back` nor `goto` touches votes or revealed phases, which is what makes
+the facilitator's Back button safe mid-session: it can never erase a vote,
+change a verdict, or reopen a closed question. Reopening is only ever explicit,
+from the `•••` menu.
+
+A facilitator never has to think in stages or beats — that vocabulary exists for
+the code and for the emergency jump menu, not for the console.
 
 Adding or reordering a stage means editing that one file. Nothing in the store,
 transport, or control layers needs to change.
@@ -293,7 +358,7 @@ whenever one exists and falls back to the synth otherwise.
 npm run lint        # eslint
 npm run typecheck   # tsc --noEmit
 npm run build       # production build
-npm run test:e2e    # 41 assertions — transport, votes, navigation, auth
+npm run test:e2e    # 47 assertions — transport, votes, navigation, auth, QR rule
 npm run test:pg     # 17 assertions — the production store specifically
 ```
 
@@ -310,22 +375,17 @@ server that is not on Postgres.
 
 - **Every projector frame** — all 56 stage/beat combinations — measured for
   horizontal overflow, vertical overflow and elements crossing the viewport
-  edge, at both **1366×768** and **1920×1080**. Zero problems at either. Minimum
-  rendered font size 11.5px (the structural eyebrow labels) and 16px
-  respectively.
-- **Mobile** at 360×640, 390×844 and 430×740: every phone state — all four role
-  decisions, both multiple-choice polls, locked, and waiting — with no scrolling
-  and no horizontal overflow.
-- **The QR rule**: swept all 56 frames and confirmed a code appears on the join
-  stage only. Reopening a decision brings the corner code back; revealing it
-  takes the code away. No code on any reveal, AAR, learning or closing screen.
-- **The join overlay** raised from mid-AAR and lowered again returned the room
-  to the identical stage, beat, phase and board.
-- **Server restart** mid-session with the projector at stage 12 beat 4: stage,
-  beat, phase, all 32 participants and all four board verdicts came back
-  identical, and a participant's phone reconnected with its own vote still
-  selected.
-- **Scale**: 34 real HTTP participants in the test suite, plus 31 simulated,
-  across a room/online mix.
-- **Facilitator isolation**: a browser without the token gets the refusal
-  screen, and participant credentials sent to `/control` are rejected 403.
+  edge, at both **1366×768** and **1920×1080**. Zero problems at either.
+- **The join-code rule**, at thirteen checkpoints: up on all four decisions, the
+  chain question and the final poll; absent on the verdict, the twist, the
+  rewind, the system question, the learning reveals, the cost screens and the
+  close.
+- **Legibility of the briefing column**: 23px at 1366×768, 30px at 1920×1080,
+  with the join QR at 174px and 244px respectively.
+- **Mobile** at 360×640, 390×844 and 430×740: every phone state — the four role
+  decisions, both polls, locked, and waiting — with no scrolling and no
+  horizontal overflow.
+- **Production**: QR decoded from rendered pixels to the public URL, a late
+  joiner from a cleared browser landing on the current decision and voting,
+  state surviving a redeploy onto fresh instances, and 45 concurrent voters
+  across four bursts with 180/180 votes accepted.

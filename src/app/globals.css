@@ -59,19 +59,35 @@
   --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
 
   /*
-   * Projector type scale.
+   * Projector type scale — sized against the PANEL, not the viewport.
    *
-   * Sized against BOTH axes: `min(vw, vh)` so a 1366×768 projector — where the
-   * height is the binding constraint — cannot produce a headline that is wide
-   * enough to fit and tall enough to push the rest of the stage off screen.
+   * The projector is one persistent shell: a narrow briefing column on the left
+   * and a wide stage on the right. Sizing headlines off `vw` would mean a
+   * headline that fits the screen but overflows the 70% column it actually
+   * lives in. Container units make every stage size relative to whichever panel
+   * is rendering it, so the two columns can hold the same tokens and each get
+   * the right answer.
+   *
+   * Still clamped against BOTH axes: on a 1366×768 projector the height is the
+   * binding constraint, and `min(cqw, cqh)` is what stops a headline that is
+   * wide enough to fit from being tall enough to push the stage off screen.
    */
-  --text-stage-xs: clamp(0.8rem, min(1vw, 1.8vh), 1.2rem);
-  --text-stage-sm: clamp(1rem, min(1.4vw, 2.5vh), 1.75rem);
-  --text-stage-md: clamp(1.35rem, min(2.2vw, 4vh), 2.9rem);
-  --text-stage-lg: clamp(1.9rem, min(3.4vw, 6vh), 4.5rem);
-  --text-stage-xl: clamp(2.5rem, min(5.2vw, 9.5vh), 7rem);
-  --text-stage-2xl: clamp(3rem, min(7.5vw, 13.5vh), 10rem);
-  --text-stage-3xl: clamp(3.6rem, min(10vw, 18vh), 14rem);
+  --text-stage-xs: clamp(0.75rem, min(1.6cqw, 2.4cqh), 1.3rem);
+  --text-stage-sm: clamp(0.95rem, min(2.4cqw, 3.4cqh), 1.9rem);
+  --text-stage-md: clamp(1.25rem, min(3.6cqw, 5.2cqh), 3rem);
+  --text-stage-lg: clamp(1.7rem, min(5.4cqw, 7.6cqh), 4.4rem);
+  --text-stage-xl: clamp(2.2rem, min(8cqw, 11cqh), 6.2rem);
+  --text-stage-2xl: clamp(2.6rem, min(11cqw, 15cqh), 8.4rem);
+  --text-stage-3xl: clamp(3rem, min(14cqw, 20cqh), 11rem);
+
+  /*
+   * Briefing scale — the left column. Narrow and tall, so it leans on width.
+   * Deliberately generous: the scenario has to stay readable from the back of
+   * the room for the whole decision sequence, not just be present.
+   */
+  --text-brief-label: clamp(0.7rem, 3cqw, 1.05rem);
+  --text-brief-body: clamp(1rem, min(5.6cqw, 3.2cqh), 1.85rem);
+  --text-brief-code: clamp(1.4rem, min(9cqw, 5cqh), 2.8rem);
 
   /* Motion — one easing for entrances, one for moves between places */
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
@@ -116,6 +132,18 @@
 }
 
 @layer utilities {
+  /*
+   * The two panels of the projector shell. `container-type: size` is what makes
+   * the cq-based type scale above resolve against the panel rather than the
+   * window — each panel becomes the reference for the text inside it.
+   */
+  .stage-canvas,
+  .brief-canvas {
+    container-type: size;
+    min-width: 0;
+    min-height: 0;
+  }
+
   /* Tabular figures wherever a number animates, so counters do not jitter. */
   .tnum {
     font-variant-numeric: tabular-nums;

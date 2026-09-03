@@ -1,20 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
-import { Button } from "@/components/ui/Button";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ConnectionBadge } from "@/components/ui/ConnectionBadge";
-import { Wordmark } from "@/components/ui/Wordmark";
 import { isPubliclyReachable, joinUrl, useJoinOrigin } from "@/lib/client/app-url";
 import { useStoredValue } from "@/lib/client/browser-state";
 import { facilitatorKey, useFacilitator } from "@/lib/client/useSession";
 import { cn } from "@/lib/cn";
 import { getStage } from "@/lib/content/activity";
 import type { ControlCommand, FacilitatorState } from "@/lib/types";
-import { LiveStats, ResultPreview } from "./LiveStats";
+import { ResultPreview } from "./LiveStats";
 import { NotesPanel } from "./NotesPanel";
 import { StageList } from "./StageList";
 
+/**
+ * The console, reduced to what a facilitator actually touches while a room is
+ * watching: Back, Reveal, Next.
+ *
+ * Everything else a session might need still exists, but it lives behind one
+ * menu, because a control that is only needed when something has gone wrong
+ * should not be competing for attention with the three that are needed every
+ * ninety seconds.
+ */
 export function FacilitatorApp({ code }: { code: string }) {
   const token = useStoredValue(facilitatorKey(code));
   const api = useFacilitator(code, token);
@@ -22,35 +29,13 @@ export function FacilitatorApp({ code }: { code: string }) {
   const { state, send } = api;
 
   const run = useCallback((command: ControlCommand) => void send(command), [send]);
-
   useKeyboardControls(run, Boolean(state));
 
   if (!token) return <NoToken code={code} />;
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-paper">
-      <header className="flex shrink-0 items-center justify-between gap-4 border-b border-rule bg-surface px-6 py-3">
-        <div className="flex items-baseline gap-4">
-          <Wordmark />
-          <span className="font-mono text-lg font-semibold tracking-tight tnum">{code}</span>
-          <ConnectionBadge state={api.connection} />
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Link
-            href={`/present/${code}`}
-            target="_blank"
-            className="rounded-lg px-3 py-2 text-sm font-semibold text-ink-2 transition-colors hover:bg-paper-2 hover:text-ink"
-          >
-            Open projector ↗
-          </Link>
-          {origin ? (
-            <span className="hidden font-mono text-xs text-ink-3 lg:inline">
-              {joinUrl(origin, code).replace(/^https?:\/\//, "")}
-            </span>
-          ) : null}
-        </div>
-      </header>
+      <Header code={code} state={state} connection={api.connection} />
 
       {!state ? (
         <div className="flex flex-1 items-center justify-center">
@@ -60,71 +45,19 @@ export function FacilitatorApp({ code }: { code: string }) {
         </div>
       ) : (
         <>
-          <div className="flex min-h-0 flex-1">
-            <section className="min-w-0 flex-1 overflow-y-auto px-6 py-5">
-              <StageHeader state={state} />
-              {/*
-               * A QR nobody outside this machine can open scans perfectly and
-               * fails silently. The facilitator is the only person who can tell
-               * whether a LAN address is fine (one room, one wifi) or fatal
-               * (anyone dialling in), so say what the code points at and let
-               * them judge.
-               */}
-              {origin && !isPubliclyReachable(origin) ? (
-                <div
-                  role="alert"
-                  className="mt-4 rounded-xl bg-signal-wash px-4 py-3 text-sm text-ink"
-                >
-                  <span className="font-semibold text-signal">Local join link. </span>
-                  The QR points at{" "}
-                  <span className="font-mono">{joinUrl(origin, code)}</span> — reachable from this
-                  network only. Anyone joining online will not be able to open it.
-                </div>
-              ) : null}
-              {/*
-               * The one mistake that reads as broken from the floor: a decision
-               * on the projector that no phone will accept, because the session
-               * was never started. Say so, and put the fix in the same line.
-               */}
-              {state.stage?.questionId && state.status !== "live" ? (
-                <div
-                  role="alert"
-                  className="mt-4 flex flex-wrap items-center gap-3 rounded-xl bg-fire-wash px-4 py-3"
-                >
-                  <span className="text-sm font-semibold text-fire-deep">
-                    This decision is on screen but the session is {state.status} — phones cannot
-                    vote yet.
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="danger"
-                    onClick={() =>
-                      run({ type: state.status === "paused" ? "resume" : "start" })
-                    }
-                  >
-                    {state.status === "paused" ? "Resume now" : "Start now"}
-                  </Button>
-                </div>
-              ) : null}
-              <div className="mt-4">
-                <LiveStats state={state} />
-              </div>
-              <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                <NotesPanel note={getStage(state.stageIndex)?.note ?? {}} />
-                <ResultPreview state={state} />
-              </div>
-              <SessionTools state={state} run={run} />
+          <main className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-5 lg:flex-row">
+            <section className="flex min-w-0 flex-1 flex-col gap-3">
+              <OnScreen code={code} state={state} />
+              <Warnings state={state} origin={origin} code={code} run={run} />
             </section>
 
-            <aside className="hidden w-[320px] shrink-0 overflow-y-auto border-l border-rule bg-surface lg:block">
-              <StageList
-                state={state}
-                onJump={(stageIndex) => run({ type: "goto", stageIndex })}
-              />
+            <aside className="flex w-full shrink-0 flex-col gap-4 lg:w-95">
+              <ResultPreview state={state} />
+              <NotesPanel note={getStage(state.stageIndex)?.note ?? {}} />
             </aside>
-          </div>
+          </main>
 
-          <Transport state={state} run={run} busy={api.busy} />
+          <Transport state={state} run={run} busy={api.busy} origin={origin} code={code} />
         </>
       )}
 
@@ -138,6 +71,434 @@ export function FacilitatorApp({ code }: { code: string }) {
 }
 
 /* ------------------------------------------------------------------ */
+
+function Header({
+  code,
+  state,
+  connection,
+}: {
+  code: string;
+  state: FacilitatorState | null;
+  connection: Parameters<typeof ConnectionBadge>[0]["state"];
+}) {
+  return (
+    <header className="flex shrink-0 flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-b border-rule bg-surface px-6 py-3">
+      <div className="flex items-baseline gap-4">
+        <span className="display-loose text-base uppercase tracking-tight">
+          Train <span className="text-ink-3">or</span> Fire
+        </span>
+        <span className="text-sm text-ink-3">
+          Session <span className="font-mono font-semibold text-ink tnum">{code}</span>
+        </span>
+      </div>
+      <div className="flex items-baseline gap-5 text-sm text-ink-2">
+        {state ? (
+          <>
+            <span>
+              <span className="font-semibold text-ink tnum">{state.counts.total}</span> joined
+            </span>
+            <span>
+              <span className="font-semibold text-ink tnum">{state.counts.responses}</span>{" "}
+              responded
+            </span>
+          </>
+        ) : null}
+        <ConnectionBadge state={connection} />
+      </div>
+    </header>
+  );
+}
+
+/**
+ * A live miniature of the projector.
+ *
+ * The console used to describe what was on screen in words. Showing the actual
+ * thing removes a whole category of live mistake — the facilitator never has to
+ * translate "stage 12, beat 4" into what the room is looking at.
+ */
+function OnScreen({ code, state }: { code: string; state: FacilitatorState }) {
+  const box = useRef<HTMLDivElement | null>(null);
+  const [scale, setScale] = useState(0.3);
+  const W = 1600;
+  const H = 900;
+
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const fit = () => setScale(Math.min(el.clientWidth / W, el.clientHeight / H));
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex items-baseline justify-between">
+        <span className="eyebrow text-ink-3">On the projector</span>
+        <span className="text-xs text-ink-3 tnum">
+          {state.stageIndex + 1} of {state.stageCount}
+        </span>
+      </div>
+      <div
+        ref={box}
+        className="mt-2 flex min-h-60 flex-1 items-center justify-center overflow-hidden rounded-xl border border-rule bg-paper-2"
+      >
+        <iframe
+          title="Projector preview"
+          src={`/present/${code}`}
+          width={W}
+          height={H}
+          // Pointer events off so a stray click cannot steal focus from the
+          // controls; the preview is for looking at, not driving.
+          className="pointer-events-none shrink-0 border-0 bg-paper"
+          style={{ transform: `scale(${scale})`, transformOrigin: "center" }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** The two things that make a session look broken from the floor. */
+function Warnings({
+  state,
+  origin,
+  code,
+  run,
+}: {
+  state: FacilitatorState;
+  origin: string;
+  code: string;
+  run: (c: ControlCommand) => void;
+}) {
+  const notLive = state.requiresParticipantResponse && state.status !== "live";
+  const localOnly = origin && !isPubliclyReachable(origin);
+  if (!notLive && !localOnly) return null;
+
+  return (
+    <div className="flex flex-col gap-2">
+      {notLive ? (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-3 rounded-xl bg-fire-wash px-4 py-3"
+        >
+          <span className="text-sm font-semibold text-fire-deep">
+            A decision is on screen but the session is {state.status} — phones cannot vote yet.
+          </span>
+          <button
+            type="button"
+            onClick={() => run({ type: state.status === "paused" ? "resume" : "start" })}
+            className="rounded-lg bg-fire px-3 py-1.5 text-sm font-semibold text-white hover:bg-fire-deep"
+          >
+            {state.status === "paused" ? "Resume now" : "Start now"}
+          </button>
+        </div>
+      ) : null}
+      {localOnly ? (
+        <div role="alert" className="rounded-xl bg-signal-wash px-4 py-3 text-sm text-ink">
+          <span className="font-semibold text-signal">Local join link. </span>
+          The QR points at <span className="font-mono">{joinUrl(origin, code)}</span> — reachable
+          from this network only.
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Transport — the only controls that matter live                      */
+/* ------------------------------------------------------------------ */
+
+function Transport({
+  state,
+  run,
+  busy,
+  origin,
+  code,
+}: {
+  state: FacilitatorState;
+  run: (c: ControlCommand) => void;
+  busy: boolean;
+  origin: string;
+  code: string;
+}) {
+  const hasQuestion = state.requiresParticipantResponse;
+  const open = hasQuestion && state.phase === "voting";
+  const revealed = hasQuestion && state.phase === "revealed";
+  const atStart = state.stageIndex === 0 && state.beat === 0;
+  const atEnd =
+    state.stageIndex === state.stageCount - 1 && state.beat === (state.stage?.beats ?? 1) - 1;
+
+  return (
+    <footer className="shrink-0 border-t border-rule bg-surface px-6 py-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => run({ type: "back" })}
+          disabled={atStart || busy}
+          className="h-14 rounded-xl border border-rule bg-surface px-6 text-base font-semibold text-ink transition-colors hover:bg-paper-2 disabled:opacity-35"
+        >
+          ← Back
+        </button>
+
+        {/*
+         * Reveal is only a control when there is something to reveal. On every
+         * other screen it would be a button that does nothing visible, which is
+         * worse than no button at all.
+         */}
+        <button
+          type="button"
+          onClick={() => run({ type: "reveal" })}
+          disabled={busy || !hasQuestion || revealed}
+          className={cn(
+            "h-14 rounded-xl px-7 text-base font-semibold transition-colors",
+            hasQuestion && !revealed
+              ? "bg-graphite text-paper hover:bg-ink"
+              : "border border-rule bg-surface text-ink-3",
+          )}
+        >
+          Reveal
+        </button>
+
+        <button
+          type="button"
+          onClick={() => run({ type: "next" })}
+          disabled={atEnd || busy}
+          className="h-14 min-w-36 rounded-xl bg-ink px-7 text-base font-semibold text-paper transition-colors hover:bg-graphite disabled:opacity-35"
+        >
+          Next →
+        </button>
+
+        <div className="ml-auto flex items-center gap-3">
+          <VotingPill open={open} revealed={revealed} hasQuestion={hasQuestion} />
+          <MoreMenu state={state} run={run} origin={origin} code={code} />
+        </div>
+      </div>
+
+      <p className="mt-2.5 text-[0.72rem] text-ink-3">
+        <Key>→</Key> next · <Key>←</Key> back · <Key>R</Key> reveal ·{" "}
+        <span className="text-ink-3/70">
+          Next reveals an open decision before it moves on, so a result is never skipped.
+        </span>
+      </p>
+    </footer>
+  );
+}
+
+function VotingPill({
+  open,
+  revealed,
+  hasQuestion,
+}: {
+  open: boolean;
+  revealed: boolean;
+  hasQuestion: boolean;
+}) {
+  if (!hasQuestion) {
+    return <span className="text-sm text-ink-3">No vote on this screen</span>;
+  }
+  return (
+    <span className="text-sm text-ink-2">
+      Voting{" "}
+      <span
+        className={cn(
+          "rounded-full px-2.5 py-1 text-xs font-semibold uppercase tracking-wide",
+          open ? "bg-signal-wash text-signal" : revealed ? "bg-train-wash text-train" : "bg-paper-3 text-ink-2",
+        )}
+      >
+        {open ? "Open" : revealed ? "Revealed" : "Locked"}
+      </span>
+    </span>
+  );
+}
+
+function Key({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd className="rounded border border-rule bg-paper-2 px-1 font-mono text-[0.68rem] text-ink-2">
+      {children}
+    </kbd>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Everything else                                                     */
+/* ------------------------------------------------------------------ */
+
+function MoreMenu({
+  state,
+  run,
+  origin,
+  code,
+}: {
+  state: FacilitatorState;
+  run: (c: ControlCommand) => void;
+  origin: string;
+  code: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [jump, setJump] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [confirmRestart, setConfirmRestart] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1800);
+    return () => clearTimeout(t);
+  }, [copied]);
+
+  const close = () => {
+    setOpen(false);
+    setJump(false);
+    setConfirmRestart(false);
+  };
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(joinUrl(origin, code));
+      setCopied(true);
+    } catch {
+      // Clipboard can be blocked; the link is on screen either way.
+    }
+  };
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => (open ? close() : setOpen(true))}
+        aria-expanded={open}
+        aria-label="More controls"
+        className="h-11 rounded-xl border border-rule bg-surface px-4 text-lg leading-none text-ink-2 transition-colors hover:bg-paper-2 hover:text-ink"
+      >
+        •••
+      </button>
+
+      {open ? (
+        <>
+          <button
+            type="button"
+            aria-label="Close menu"
+            onClick={close}
+            className="fixed inset-0 z-30 cursor-default"
+          />
+          <div className="absolute bottom-[calc(100%+0.5rem)] right-0 z-40 w-80 overflow-hidden rounded-xl border border-rule bg-surface shadow-raise">
+            {jump ? (
+              <div className="max-h-[60vh] overflow-y-auto">
+                <div className="flex items-center justify-between border-b border-rule px-4 py-2.5">
+                  <span className="eyebrow text-ink-3">Jump to section</span>
+                  <button
+                    type="button"
+                    onClick={() => setJump(false)}
+                    className="text-xs font-semibold text-ink-3 hover:text-ink"
+                  >
+                    Back
+                  </button>
+                </div>
+                <StageList
+                  state={state}
+                  onJump={(stageIndex) => {
+                    run({ type: "goto", stageIndex });
+                    close();
+                  }}
+                />
+              </div>
+            ) : (
+              <ul className="py-1.5">
+                <Item
+                  onClick={() => {
+                    run({ type: state.overlay === "join" ? "hideJoin" : "showJoin" });
+                    close();
+                  }}
+                >
+                  {state.overlay === "join" ? "Hide full-screen QR" : "Show full-screen QR"}
+                </Item>
+                <Item onClick={copy}>
+                  {copied ? "Link copied" : "Copy participant link"}
+                </Item>
+                <Item onClick={() => setJump(true)}>Jump to section…</Item>
+
+                <Divider />
+
+                {state.requiresParticipantResponse ? (
+                  <Item
+                    onClick={() => {
+                      run({ type: state.phase === "voting" ? "lock" : "unlock" });
+                      close();
+                    }}
+                  >
+                    {state.phase === "voting" ? "Lock voting" : "Reopen voting"}
+                  </Item>
+                ) : null}
+                <Item
+                  onClick={() => {
+                    run({ type: state.status === "live" ? "pause" : "start" });
+                    close();
+                  }}
+                >
+                  {state.status === "live" ? "Pause session" : "Start session"}
+                </Item>
+
+                <Divider />
+
+                <Item onClick={() => { run({ type: "simulate", count: 30 }); close(); }}>
+                  Add 30 simulated participants
+                </Item>
+                {state.simulatedCount > 0 ? (
+                  <Item onClick={() => { run({ type: "clearSimulated" }); close(); }}>
+                    Remove {state.simulatedCount} simulated
+                  </Item>
+                ) : null}
+
+                <Divider />
+
+                <Item
+                  danger
+                  onClick={() => {
+                    if (!confirmRestart) return setConfirmRestart(true);
+                    run({ type: "restart" });
+                    close();
+                  }}
+                >
+                  {confirmRestart ? "Confirm restart — clears every vote" : "Restart session"}
+                </Item>
+                <Item danger onClick={() => { run({ type: "end" }); close(); }}>
+                  End session
+                </Item>
+              </ul>
+            )}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function Item({
+  children,
+  onClick,
+  danger,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          "w-full px-4 py-2.5 text-left text-sm font-medium transition-colors hover:bg-paper-2",
+          danger ? "text-fire hover:text-fire-deep" : "text-ink",
+        )}
+      >
+        {children}
+      </button>
+    </li>
+  );
+}
+
+const Divider = () => <li aria-hidden="true" className="my-1.5 h-px bg-rule-2" />;
 
 function NoToken({ code }: { code: string }) {
   return (
@@ -155,254 +516,6 @@ function NoToken({ code }: { code: string }) {
         Start a new session
       </Link>
     </div>
-  );
-}
-
-function StageHeader({ state }: { state: FacilitatorState }) {
-  const stage = state.stage;
-  const beats = stage?.beats ?? 1;
-
-  return (
-    <div className="flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <div className="eyebrow text-ink-3">
-          {stage?.chapter} · Stage {state.stageIndex + 1} of {state.stageCount}
-        </div>
-        <h1 className="display mt-1 text-3xl">{stage?.label ?? "—"}</h1>
-      </div>
-
-      <div className="flex items-center gap-2">
-        {beats > 1 ? (
-          <Pill tone="neutral">
-            Beat {state.beat + 1}/{beats}
-          </Pill>
-        ) : null}
-        {stage?.questionId ? (
-          <Pill
-            tone={
-              state.phase === "voting" ? "open" : state.phase === "revealed" ? "revealed" : "locked"
-            }
-          >
-            {state.phase === "voting"
-              ? "Voting open"
-              : state.phase === "revealed"
-                ? "Revealed"
-                : "Locked"}
-          </Pill>
-        ) : null}
-        <Pill tone={state.status === "live" ? "open" : "neutral"}>{state.status}</Pill>
-        {state.overlay === "join" ? <Pill tone="locked">QR overlay up</Pill> : null}
-        {state.simulatedCount > 0 ? (
-          <Pill tone="locked">{state.simulatedCount} simulated</Pill>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function Pill({
-  children,
-  tone,
-}: {
-  children: React.ReactNode;
-  tone: "neutral" | "open" | "locked" | "revealed";
-}) {
-  const tones = {
-    neutral: "bg-paper-2 text-ink-2",
-    open: "bg-signal-wash text-signal",
-    locked: "bg-paper-3 text-ink-2",
-    revealed: "bg-train-wash text-train",
-  } as const;
-  return (
-    <span
-      className={cn(
-        "rounded-full px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-wide",
-        tones[tone],
-      )}
-    >
-      {children}
-    </span>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Transport                                                           */
-/* ------------------------------------------------------------------ */
-
-function Transport({
-  state,
-  run,
-  busy,
-}: {
-  state: FacilitatorState;
-  run: (c: ControlCommand) => void;
-  busy: boolean;
-}) {
-  const hasQuestion = Boolean(state.stage?.questionId);
-  const atStart = state.stageIndex === 0 && state.beat === 0;
-  const atEnd =
-    state.stageIndex === state.stageCount - 1 && state.beat === (state.stage?.beats ?? 1) - 1;
-
-  return (
-    <footer className="shrink-0 border-t border-rule bg-surface px-6 py-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={() => run({ type: "back" })} disabled={atStart || busy} size="lg">
-          ← Back
-        </Button>
-        <Button
-          variant="solid"
-          size="lg"
-          onClick={() => run({ type: "next" })}
-          disabled={atEnd || busy}
-          className="min-w-32"
-        >
-          Next →
-        </Button>
-
-        <div className="mx-2 h-8 w-px bg-rule" />
-
-        <Button
-          variant={state.phase === "revealed" ? "outline" : "solid"}
-          size="lg"
-          onClick={() => run({ type: "reveal" })}
-          disabled={busy}
-          className={cn(!hasQuestion && "opacity-80")}
-        >
-          Reveal
-        </Button>
-        {hasQuestion ? (
-          state.phase === "voting" ? (
-            <Button onClick={() => run({ type: "lock" })} disabled={busy}>
-              Lock voting
-            </Button>
-          ) : (
-            <Button onClick={() => run({ type: "unlock" })} disabled={busy}>
-              Unlock voting
-            </Button>
-          )
-        ) : null}
-
-        <div className="mx-2 h-8 w-px bg-rule" />
-
-        {state.overlay === "join" ? (
-          <Button onClick={() => run({ type: "hideJoin" })} disabled={busy}>
-            Hide join QR
-          </Button>
-        ) : (
-          <Button onClick={() => run({ type: "showJoin" })} disabled={busy}>
-            Show join QR
-          </Button>
-        )}
-
-        <div className="ml-auto flex items-center gap-2">
-          {state.status !== "live" ? (
-            <Button
-              variant="solid"
-              onClick={() => run({ type: state.status === "paused" ? "resume" : "start" })}
-              disabled={busy}
-            >
-              {state.status === "paused" ? "Resume" : "Start session"}
-            </Button>
-          ) : (
-            <Button onClick={() => run({ type: "pause" })} disabled={busy}>
-              Pause
-            </Button>
-          )}
-        </div>
-      </div>
-
-      <p className="mt-2 text-[0.7rem] text-ink-3">
-        Keys: <Key>→</Key> next · <Key>←</Key> back · <Key>R</Key> reveal · <Key>L</Key> lock ·{" "}
-        <Key>Q</Key> join QR
-      </p>
-    </footer>
-  );
-}
-
-function Key({ children }: { children: React.ReactNode }) {
-  return (
-    <kbd className="rounded border border-rule bg-paper-2 px-1 font-mono text-[0.65rem] text-ink-2">
-      {children}
-    </kbd>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Session tools                                                       */
-/* ------------------------------------------------------------------ */
-
-function SessionTools({
-  state,
-  run,
-}: {
-  state: FacilitatorState;
-  run: (c: ControlCommand) => void;
-}) {
-  const [confirmRestart, setConfirmRestart] = useState(false);
-
-  useEffect(() => {
-    if (!confirmRestart) return;
-    const timer = setTimeout(() => setConfirmRestart(false), 5000);
-    return () => clearTimeout(timer);
-  }, [confirmRestart]);
-
-  return (
-    <section className="mt-4 rounded-xl border border-rule bg-surface p-4">
-      <div className="eyebrow text-ink-3">Session</div>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          onClick={() => run({ type: "settings", patch: { showQr: !state.settings.showQr } })}
-        >
-          Corner QR: {state.settings.showQr ? "on" : "off"}
-        </Button>
-        <Button
-          size="sm"
-          onClick={() =>
-            run({ type: "settings", patch: { soundEnabled: !state.settings.soundEnabled } })
-          }
-        >
-          Sound: {state.settings.soundEnabled ? "on" : "muted"}
-        </Button>
-
-        <div className="mx-1 h-6 w-px bg-rule" />
-
-        <Button
-          size="sm"
-          onClick={() => run({ type: "resetStage" })}
-          disabled={!state.stage?.questionId}
-        >
-          Clear this stage&rsquo;s votes
-        </Button>
-        <Button size="sm" onClick={() => run({ type: "simulate", count: 30 })}>
-          Add 30 simulated
-        </Button>
-        {state.simulatedCount > 0 ? (
-          <Button size="sm" onClick={() => run({ type: "clearSimulated" })}>
-            Remove simulated
-          </Button>
-        ) : null}
-
-        <div className="ml-auto flex items-center gap-2">
-          {confirmRestart ? (
-            <Button
-              size="sm"
-              variant="danger"
-              onClick={() => {
-                run({ type: "restart" });
-                setConfirmRestart(false);
-              }}
-            >
-              Confirm restart — clears every vote
-            </Button>
-          ) : (
-            <Button size="sm" variant="ghost" onClick={() => setConfirmRestart(true)}>
-              Restart activity
-            </Button>
-          )}
-        </div>
-      </div>
-    </section>
   );
 }
 
@@ -437,18 +550,6 @@ function useKeyboardControls(run: (c: ControlCommand) => void, enabled: boolean)
         case "r":
         case "R":
           run({ type: "reveal" });
-          break;
-        case "l":
-        case "L":
-          run({ type: "lock" });
-          break;
-        case "u":
-        case "U":
-          run({ type: "unlock" });
-          break;
-        case "q":
-        case "Q":
-          run({ type: "showJoin" });
           break;
         case "Escape":
           run({ type: "hideJoin" });

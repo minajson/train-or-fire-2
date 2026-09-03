@@ -39,7 +39,7 @@ export function FinalPollStage({ state }: { state: PublicSessionState }) {
 
   return (
     <StageFrame className="flex flex-col">
-      <div className="flex items-baseline justify-between gap-[2vw]">
+      <div className="flex items-baseline justify-between gap-[2cqw]">
         <h1 className="display text-stage-xl">
           What actually
           <br />
@@ -49,7 +49,7 @@ export function FinalPollStage({ state }: { state: PublicSessionState }) {
           <div className="display tnum shrink-0 text-stage-md text-ink-2">
             {state.counts.responses}
             <span className="text-ink-3"> / {state.counts.total}</span>
-            <span className="stage-eyebrow ml-[0.8vw] text-ink-3">Decided</span>
+            <span className="stage-eyebrow ml-[0.8cqw] text-ink-3">Decided</span>
           </div>
         ) : (
           <div className="stage-eyebrow shrink-0 text-ink-3">
@@ -58,7 +58,7 @@ export function FinalPollStage({ state }: { state: PublicSessionState }) {
         )}
       </div>
 
-      <ul className="mt-[3vh] flex min-h-0 flex-1 flex-col gap-[0.7vh]">
+      <ul className="mt-[3cqh] flex min-h-0 flex-1 flex-col gap-[0.7cqh]">
         {ordered.map((row) => {
           const isLeader = row.id === leader;
           return (
@@ -66,7 +66,7 @@ export function FinalPollStage({ state }: { state: PublicSessionState }) {
               key={row.id}
               layout
               transition={MOVE}
-              className="relative flex min-h-0 flex-1 items-center px-[1vw]"
+              className="relative flex min-h-0 flex-1 items-center px-[1cqw]"
             >
               {revealed ? (
                 <motion.div
@@ -75,7 +75,7 @@ export function FinalPollStage({ state }: { state: PublicSessionState }) {
                   transition={{ ...MOVE, delay: 0.2 }}
                   style={{ originX: 0 }}
                   className={cn(
-                    "absolute inset-y-[0.35vh] left-0 right-0 rounded-r-lg",
+                    "absolute inset-y-[0.35cqh] left-0 right-0 rounded-r-lg",
                     isLeader ? "bg-graphite/18" : "bg-ink/8",
                   )}
                 />
@@ -99,7 +99,7 @@ export function FinalPollStage({ state }: { state: PublicSessionState }) {
                   animate={{ opacity: 1 }}
                   transition={{ ...ENTER, delay: 0.35 }}
                   className={cn(
-                    "relative ml-[1.5vw] shrink-0 display tnum",
+                    "relative ml-[1.5cqw] shrink-0 display tnum",
                     isLeader
                       ? "text-stage-lg"
                       : "text-stage-md text-ink-3",

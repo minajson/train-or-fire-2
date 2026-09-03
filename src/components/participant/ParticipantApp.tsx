@@ -181,24 +181,22 @@ function waitingCopy(state: PublicSessionState): { title: string; body: string }
     return { title: "That's the session.", body: "Thanks for deciding with us." };
   }
 
-  switch (state.stage?.kind) {
-    case "verdict":
-      return { title: "That's our verdict.", body: "It's on the screen." };
-    case "twist":
-    case "rewind":
-    case "system":
-      return { title: "Eyes up.", body: "Watch the screen." };
-    case "learning":
-    case "cost-claim":
-    case "cost-reality":
-    case "final":
-    case "truth":
-      return { title: "Eyes up.", body: "Watch the screen." };
-    case "closing":
-      return { title: "Thank you.", body: "What will you do before the next warning?" };
-    default:
-      return { title: "Hold on.", body: "The next decision is coming." };
+  if (state.stage?.kind === "closing") {
+    return { title: "Thank you.", body: "What will you do before the next warning?" };
   }
+
+  /*
+   * One message for every screen the room cannot answer.
+   *
+   * A phone that keeps changing its mind about what it is telling you pulls
+   * eyes down at exactly the moments the projector is carrying the session.
+   * This says the two things a participant needs — you are in, and you will be
+   * told — and then stays still.
+   */
+  return {
+    title: "You're in.",
+    body: "Follow the discussion on screen. We'll let you know when the next decision opens.",
+  };
 }
 
 function WaitingScreen({ state }: { state: PublicSessionState }) {

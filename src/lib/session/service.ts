@@ -342,6 +342,24 @@ export async function applyControl(
        */
       case "next": {
         draft.overlay = null;
+
+        /*
+         * On a question the room has answered but nobody has revealed, Next
+         * reveals instead of advancing.
+         *
+         * The whole point of the console is that a facilitator can run the
+         * session on one key. That only holds if the one key cannot silently
+         * walk past a vote the room just cast — losing the moment the entire
+         * activity is built around. The sequence becomes: question open →
+         * Next reveals → Next moves on. Reveal still exists for anyone who
+         * wants to be explicit, and the jump menu still skips outright.
+         */
+        const question = stageQuestion(draft.stageIndex);
+        if (question && (draft.phases[question.id] ?? "voting") !== "revealed") {
+          draft.phases[question.id] = "revealed";
+          break;
+        }
+
         const stage = getStage(draft.stageIndex);
         const beat = clampBeat(draft.stageIndex, draft.beat);
         if (stage && beat < stage.beats - 1) {

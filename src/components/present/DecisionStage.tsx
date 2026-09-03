@@ -3,60 +3,18 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { VerdictMark } from "@/components/ui/VerdictMark";
 import { cn } from "@/lib/cn";
-import { EVIDENCE_LINES, type Role, type Verdict } from "@/lib/content/activity";
+import { ROLES, type Role, type Verdict } from "@/lib/content/activity";
 import { CountPct, ENTER, MOVE } from "@/lib/motion/primitives";
 import type { BoardEntry, PublicSessionState } from "@/lib/types";
 import { StageFrame } from "./StageFrame";
-
-/* ------------------------------------------------------------------ */
-/* Evidence panel — visible for the whole judging stage                */
-/* ------------------------------------------------------------------ */
-
-/**
- * The scenario, compressed to fragments and parked on the left for the whole
- * decision sequence. Nobody should have to remember the incident from four
- * screens ago in order to judge the fourth role.
- */
-export function EvidencePanel({ className }: { className?: string }) {
-  return (
-    <aside
-      className={cn(
-        "flex w-[29%] shrink-0 flex-col border-r border-rule bg-paper-2 px-[2.2vw] py-[4vh]",
-        className,
-      )}
-    >
-      <div className="stage-eyebrow text-ink-3">The incident</div>
-      <ul className="mt-[3.5vh] space-y-[1.9vh]">
-        {EVIDENCE_LINES.map((line) => (
-          <li
-            key={line}
-            className="display-loose text-stage-sm text-ink-2"
-          >
-            {line}
-          </li>
-        ))}
-      </ul>
-    </aside>
-  );
-}
 
 /* ------------------------------------------------------------------ */
 /* Destination zones                                                   */
 /* ------------------------------------------------------------------ */
 
 const TONE: Record<Verdict, { label: string; wash: string; edge: string; ink: string }> = {
-  train: {
-    label: "Train",
-    wash: "bg-train-wash",
-    edge: "border-train-edge",
-    ink: "text-train",
-  },
-  fire: {
-    label: "Fire",
-    wash: "bg-fire-wash",
-    edge: "border-fire-edge",
-    ink: "text-fire",
-  },
+  train: { label: "Train", wash: "bg-train-wash", edge: "border-train-edge", ink: "text-train" },
+  fire: { label: "Fire", wash: "bg-fire-wash", edge: "border-fire-edge", ink: "text-fire" },
 };
 
 /**
@@ -69,16 +27,15 @@ const TONE: Record<Verdict, { label: string; wash: string; edge: string; ink: st
  */
 export function VerdictZone({
   verdict,
-  /** Share for the role currently being judged. Null while voting is open. */
   livePct,
-  /** Roles already settled here, oldest first. */
   placed,
-  /** Lifts the winning side at the moment of reveal. */
   highlight = false,
   compact = false,
 }: {
   verdict: Verdict;
+  /** Share for the role being judged. Null until the facilitator reveals. */
   livePct: number | null;
+  /** Roles already settled here, oldest first. */
   placed: BoardEntry[];
   highlight?: boolean;
   compact?: boolean;
@@ -90,18 +47,14 @@ export function VerdictZone({
       animate={{ scale: highlight ? 1 : 0.995 }}
       transition={MOVE}
       className={cn(
-        "flex min-h-0 flex-col rounded-2xl border-2 px-[1.8vw] py-[2.4vh]",
+        "flex min-h-0 flex-col rounded-2xl border-2 px-[3cqw] py-[3cqh]",
         tone.wash,
         highlight ? "border-current shadow-lift" : tone.edge,
         highlight && tone.ink,
       )}
     >
-      <div className={cn("flex shrink-0 items-center gap-[0.9vw]", tone.ink)}>
-        <VerdictMark
-          verdict={verdict}
-          className="h-[5vh] w-[5vh]"
-          strokeWidth={2.6}
-        />
+      <div className={cn("flex shrink-0 items-center gap-[1.4cqw]", tone.ink)}>
+        <VerdictMark verdict={verdict} className="h-[6cqh] w-[6cqh]" strokeWidth={2.6} />
         <span className="display text-stage-lg uppercase">{tone.label}</span>
       </div>
 
@@ -113,11 +66,7 @@ export function VerdictZone({
       {livePct !== null ? (
         <CountPct
           value={livePct}
-          className={cn(
-            "display mt-[1vh] shrink-0 tnum leading-[0.85]",
-            tone.ink,
-            "text-stage-2xl",
-          )}
+          className={cn("display mt-[1.5cqh] shrink-0 text-stage-2xl leading-[0.85] tnum", tone.ink)}
         />
       ) : null}
 
@@ -129,11 +78,11 @@ export function VerdictZone({
        */}
       <div
         className={cn(
-          "mt-[2vh] flex min-h-0 flex-1 flex-col",
+          "mt-[2.5cqh] flex min-h-0 flex-1 flex-col",
           compact ? "justify-center" : "justify-end",
         )}
       >
-        <ul className={cn("flex flex-col", compact ? "gap-[2.4vh]" : "gap-[1.2vh]")}>
+        <ul className={cn("flex flex-col", compact ? "gap-[3.5cqh]" : "gap-[1.8cqh]")}>
           <AnimatePresence initial={false}>
             {placed.map((entry) => (
               <motion.li
@@ -143,16 +92,14 @@ export function VerdictZone({
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 transition={MOVE}
                 className={cn(
-                  "flex items-baseline justify-between gap-[1vw] border-t border-current/15",
-                  compact ? "pt-[1.8vh]" : "pt-[1.2vh]",
+                  "flex items-baseline justify-between gap-[1.5cqw] border-t border-current/15",
+                  compact ? "pt-[2.4cqh]" : "pt-[1.6cqh]",
                 )}
               >
                 <span
                   className={cn(
                     "display-loose min-w-0 truncate",
-                    compact
-                      ? "text-stage-md"
-                      : "text-stage-sm",
+                    compact ? "text-stage-md" : "text-stage-sm",
                   )}
                 >
                   {entry.title}
@@ -161,9 +108,7 @@ export function VerdictZone({
                   className={cn(
                     "display tnum",
                     tone.ink,
-                    compact
-                      ? "text-stage-lg"
-                      : "text-stage-sm",
+                    compact ? "text-stage-lg" : "text-stage-sm",
                   )}
                 >
                   {Math.round(verdict === "train" ? entry.trainPct : entry.firePct)}%
@@ -189,109 +134,103 @@ function minorityLine(entry: BoardEntry): string | null {
   return `${entry.minorityCount} people saw this differently.`;
 }
 
-export function DecisionStage({
-  state,
-  role,
-}: {
-  state: PublicSessionState;
-  role: Role;
-}) {
+export function DecisionStage({ state, role }: { state: PublicSessionState; role: Role }) {
   const revealed = state.phase === "revealed";
   const entry = state.board.find((b) => b.roleId === role.id) ?? null;
+  const index = ROLES.findIndex((r) => r.id === role.id) + 1;
 
   // A role only ever appears on the board once its own question is revealed,
-  // so the two zone lists below are the running record of the room's verdicts.
+  // so these two lists are the running record of the room's verdicts.
   const trainPlaced = state.board.filter((b) => b.verdict === "train");
   const firePlaced = state.board.filter((b) => b.verdict === "fire");
 
   return (
-    <StageFrame padded={false} className="flex">
-      <EvidencePanel />
-
-      <div className="flex min-w-0 flex-1 flex-col px-[2.8vw] py-[4vh]">
-        <header className="flex items-baseline justify-between gap-[2vw]">
-          <h1 className="display-loose text-stage-md text-ink-3">
-            What would you do?
-          </h1>
-          <AnimatePresence mode="wait">
-            {!revealed ? (
-              <motion.div
-                key="counter"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="display tnum text-stage-md text-ink-2"
-              >
-                {state.counts.responses}
-                <span className="text-ink-3"> / {state.counts.total}</span>
-                <span className="stage-eyebrow ml-[0.8vw] text-ink-3">Decided</span>
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-        </header>
-
-        {/* The role under judgement. Lifts out of the way on reveal. */}
-        <div className="relative mt-[2.5vh] min-h-[24vh]">
-          <AnimatePresence>
-            {!revealed ? (
-              <motion.div
-                key={role.id}
-                initial={{ opacity: 0, y: 26 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{
-                  opacity: 0,
-                  y: 44,
-                  scale: 0.96,
-                  x: entry?.verdict === "fire" ? 70 : -70,
-                }}
-                transition={ENTER}
-                className="absolute inset-0"
-              >
-                <div className="stage-eyebrow text-ink-3">{role.marker}</div>
-                <h2 className="display mt-[1.2vh] text-stage-xl">
-                  {role.title}
-                </h2>
-                <p className="quote mt-[2vh] text-stage-md text-ink-2">
-                  “{role.quote}”
-                </p>
-              </motion.div>
-            ) : (
-              <motion.div
-                key={`${role.id}-result`}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ ...ENTER, delay: 0.25 }}
-                className="absolute inset-0 flex flex-col justify-center"
-              >
-                <div className="stage-eyebrow text-ink-3">{role.marker}</div>
-                <h2 className="display mt-[1.2vh] text-stage-lg">
-                  {role.title}
-                </h2>
-                {entry ? (
-                  <p className="display-loose mt-[2vh] text-stage-sm text-ink-3">
-                    {minorityLine(entry)}
-                  </p>
-                ) : null}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
-        <div className="mt-[2.5vh] grid min-h-0 flex-1 grid-cols-2 gap-[1.4vw]">
-          <VerdictZone
-            verdict="train"
-            livePct={revealed && entry ? entry.trainPct : null}
-            placed={trainPlaced}
-            highlight={revealed && entry?.verdict === "train"}
-          />
-          <VerdictZone
-            verdict="fire"
-            livePct={revealed && entry ? entry.firePct : null}
-            placed={firePlaced}
-            highlight={revealed && entry?.verdict === "fire"}
-          />
-        </div>
+    <StageFrame className="flex flex-col">
+      <div className="flex shrink-0 items-baseline justify-between gap-[2cqw]">
+        <span className="stage-eyebrow text-ink-3">
+          Decision {String(index).padStart(2, "0")} / {String(ROLES.length).padStart(2, "0")}
+        </span>
+        <AnimatePresence mode="wait">
+          {!revealed ? (
+            <motion.div
+              key="counter"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="display text-stage-md text-ink-2 tnum"
+            >
+              {state.counts.responses}
+              <span className="text-ink-3"> / {state.counts.total}</span>
+              <span className="stage-eyebrow ml-[1cqw] text-ink-3">Decided</span>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </div>
+
+      {/* The role under judgement. Lifts out of the way on reveal. */}
+      <div className="relative mt-[2cqh] min-h-[30cqh] shrink-0">
+        <AnimatePresence>
+          {!revealed ? (
+            <motion.div
+              key={role.id}
+              initial={{ opacity: 0, y: 26 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 44, scale: 0.96, x: entry?.verdict === "fire" ? 70 : -70 }}
+              transition={ENTER}
+              className="absolute inset-0"
+            >
+              <h2 className="display text-stage-xl">{role.title}</h2>
+              <ul className="mt-[1.8cqh] space-y-[0.5cqh]">
+                {role.phoneFacts.map((fact) => (
+                  <li key={fact} className="display-loose text-stage-sm text-ink-2">
+                    {fact}
+                  </li>
+                ))}
+              </ul>
+              <p className="quote mt-[1.8cqh] text-stage-md text-ink">“{role.quote}”</p>
+            </motion.div>
+          ) : (
+            <motion.div
+              key={`${role.id}-result`}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ ...ENTER, delay: 0.25 }}
+              className="absolute inset-0 flex flex-col justify-center"
+            >
+              <h2 className="display text-stage-lg">{role.title}</h2>
+              {entry ? (
+                <p className="display-loose mt-[2cqh] text-stage-sm text-ink-3">
+                  {minorityLine(entry)}
+                </p>
+              ) : null}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <div className="mt-[2cqh] grid min-h-0 flex-1 grid-cols-2 gap-[2cqw]">
+        <VerdictZone
+          verdict="train"
+          livePct={revealed && entry ? entry.trainPct : null}
+          placed={trainPlaced}
+          highlight={revealed && entry?.verdict === "train"}
+        />
+        <VerdictZone
+          verdict="fire"
+          livePct={revealed && entry ? entry.firePct : null}
+          placed={firePlaced}
+          highlight={revealed && entry?.verdict === "fire"}
+        />
+      </div>
+
+      {/*
+       * No separate "verdict so far" strip.
+       *
+       * The zones below already hold every role the room has placed, which is
+       * the cumulative board doing its own job. A chip row repeating those same
+       * names underneath is the same information twice — and two copies of a
+       * thing read as clutter long before they read as reinforcement.
+       */}
     </StageFrame>
   );
 }

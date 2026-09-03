@@ -51,9 +51,9 @@ export function OpeningStage({ beat }: { beat: number }) {
 
         <AnimatePresence>
           {beat >= 1 ? (
-            <Rise delay={0.1} className="mt-[5vh]">
-              <div className="h-px w-[38vw] max-w-[560px] bg-rule" />
-              <p className="display-loose mt-[3vh] text-stage-md text-ink-2">
+            <Rise delay={0.1} className="mt-[5cqh]">
+              <div className="h-px w-[38cqw] max-w-[560px] bg-rule" />
+              <p className="display-loose mt-[3cqh] text-stage-md text-ink-2">
                 One failure. Four decisions. You decide.
               </p>
             </Rise>
@@ -83,7 +83,7 @@ export function JoinStage({
     <StageFrame className="flex flex-col justify-between">
       <div className="stage-eyebrow text-ink-3">Train or Fire</div>
 
-      <div className="flex flex-1 items-center gap-[5vw]">
+      <div className="flex flex-1 items-center gap-[5cqw]">
         <div className="min-w-0 flex-1">
           <h1 className="display text-stage-2xl">
             Scan
@@ -91,7 +91,7 @@ export function JoinStage({
             to join.
           </h1>
 
-          <div className="mt-[5vh]">
+          <div className="mt-[5cqh]">
             <div className="stage-eyebrow text-ink-3">Session code</div>
             <div className="font-mono text-stage-xl font-semibold leading-none tracking-tight tnum">
               {state.code}
@@ -99,7 +99,7 @@ export function JoinStage({
           </div>
 
           {url ? (
-            <div className="mt-[3vh] font-mono text-stage-sm text-ink-2">
+            <div className="mt-[3cqh] font-mono text-stage-sm text-ink-2">
               {url.replace(/^https?:\/\//, "")}
             </div>
           ) : null}
@@ -112,7 +112,7 @@ export function JoinStage({
             transition={ENTER}
             className="shrink-0"
           >
-            <QrCode value={url} className="h-[56vh] w-[56vh] rounded-2xl" />
+            <QrCode value={url} className="h-[56cqh] w-[56cqh] rounded-2xl" />
           </motion.div>
         ) : null}
       </div>
@@ -136,7 +136,7 @@ export function IncidentStage({ beat }: { beat: number }) {
       <div className="stage-eyebrow text-ink-3">The incident</div>
 
       <div className="flex flex-1 flex-col justify-center">
-        <div className="max-w-[80vw] space-y-[2.2vh]">
+        <div className="max-w-[80cqw] space-y-[2.2cqh]">
           {INCIDENT_LINES.slice(0, beat + 1).map((line, i) => (
             <motion.p
               key={line}
@@ -168,9 +168,9 @@ export function PreludeStage({ beat }: { beat: number }) {
 
       <AnimatePresence>
         {beat >= 1 ? (
-          <Rise delay={0.05} className="mt-[6vh]">
-            <div className="h-px w-[42vw] max-w-[640px] bg-rule" />
-            <p className="display mt-[3.5vh] text-stage-xl text-ink-2">
+          <Rise delay={0.05} className="mt-[6cqh]">
+            <div className="h-px w-[42cqw] max-w-[640px] bg-rule" />
+            <p className="display mt-[3.5cqh] text-stage-xl text-ink-2">
               What would you do?
             </p>
           </Rise>

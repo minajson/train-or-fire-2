@@ -128,6 +128,28 @@ export const INCIDENT_LINES: string[] = [
 ];
 
 /**
+ * The scenario as it sits in the left column for the whole judging sequence.
+ *
+ * Split into runs so a handful of phrases can carry bold weight — the ones a
+ * facilitator points at — without tinting the panel with colour. This is a
+ * briefing someone glances back at mid-decision, so it stays sentences rather
+ * than the fragments used later.
+ */
+export interface BriefRun {
+  t: string;
+  /** Load-bearing phrase. Weight only; never a second colour. */
+  b?: boolean;
+}
+
+export const INCIDENT_BRIEF: BriefRun[][] = [
+  [{ t: "A " }, { t: "critical production machine", b: true }, { t: " has failed, stopping operations." }],
+  [{ t: "For several weeks, the machine showed " }, { t: "abnormal readings", b: true }, { t: "." }],
+  [{ t: "Preventive work", b: true }, { t: " and " }, { t: "OEM support", b: true }, { t: " were recommended." }],
+  [{ t: "The work didn\u2019t happen." }],
+  [{ t: "Now " }, { t: "production is down", b: true }, { t: "." }],
+];
+
+/**
  * The compact restatement that lives beside the decision arena for the whole
  * judging stage. Fragments, not sentences — the room has already read the
  * narrative once and now needs it only as a reference.
@@ -377,6 +399,15 @@ export type StageKind =
   | "truth"
   | "closing";
 
+/**
+ * What the left column of the shell is doing.
+ *
+ * `briefing` — the incident, for the whole judging sequence.
+ * `known`    — the compressed facts, for the AAR.
+ * `quiet`    — nothing but the wordmark, so a single sentence can own the room.
+ */
+export type PanelMode = "briefing" | "known" | "quiet";
+
 export interface Stage {
   id: string;
   kind: StageKind;
@@ -386,6 +417,8 @@ export interface Stage {
   chapter: string;
   /** How many progressive-disclosure beats this stage has. Always >= 1. */
   beats: number;
+  /** What the persistent left column shows while this stage is up. */
+  panel: PanelMode;
   questionId?: string;
   roleId?: RoleId;
   learningIndex?: number;
@@ -395,6 +428,7 @@ export interface Stage {
 const decisionStage = (role: Role, note: FacilitatorNote): Stage => ({
   id: `decide-${role.id}`,
   kind: "decision",
+  panel: "briefing",
   // The chapter heading already says "The decision", so the role name alone is
   // enough — and short enough that Engineer and Manager stay distinguishable in
   // the sidebar rather than both truncating to "Maintena…".
@@ -410,6 +444,7 @@ export const STAGES: Stage[] = [
   {
     id: "opening",
     kind: "opening",
+    panel: "quiet",
     label: "Opening",
     chapter: "Open",
     beats: 2,
@@ -423,6 +458,7 @@ export const STAGES: Stage[] = [
   {
     id: "join",
     kind: "join",
+    panel: "quiet",
     label: "Join",
     chapter: "Open",
     beats: 1,
@@ -437,6 +473,7 @@ export const STAGES: Stage[] = [
   {
     id: "incident",
     kind: "incident",
+    panel: "quiet",
     label: "The incident",
     chapter: "Open",
     beats: INCIDENT_LINES.length,
@@ -450,6 +487,7 @@ export const STAGES: Stage[] = [
   {
     id: "prelude",
     kind: "prelude",
+    panel: "quiet",
     label: "Four decisions",
     chapter: "Open",
     beats: 2,
@@ -491,6 +529,7 @@ export const STAGES: Stage[] = [
   {
     id: "verdict",
     kind: "verdict",
+    panel: "briefing",
     label: "Our verdict",
     chapter: "The decision",
     beats: 1,
@@ -506,6 +545,7 @@ export const STAGES: Stage[] = [
   {
     id: "twist",
     kind: "twist",
+    panel: "quiet",
     label: "You fired someone",
     chapter: "The turn",
     beats: 2,
@@ -520,6 +560,7 @@ export const STAGES: Stage[] = [
   {
     id: "rewind",
     kind: "rewind",
+    panel: "known",
     label: "Let's rewind",
     chapter: "Rewind",
     beats: CHAIN.length,
@@ -534,6 +575,7 @@ export const STAGES: Stage[] = [
   {
     id: "chain-question",
     kind: "question",
+    panel: "known",
     label: "Break the chain",
     chapter: "Rewind",
     beats: 1,
@@ -549,6 +591,7 @@ export const STAGES: Stage[] = [
   {
     id: "system",
     kind: "system",
+    panel: "known",
     label: "Did you fix the system?",
     chapter: "Rewind",
     beats: 2 + SYSTEM_REPLACEMENTS.length + 1,
@@ -563,6 +606,7 @@ export const STAGES: Stage[] = [
   {
     id: "failed-first",
     kind: "question",
+    panel: "known",
     label: "What failed first",
     chapter: "Learn",
     beats: 1,
@@ -578,6 +622,7 @@ export const STAGES: Stage[] = [
   ...LEARNINGS.map<Stage>((learning, i) => ({
     id: `learning-${i + 1}`,
     kind: "learning",
+    panel: "quiet",
     label: `Learning ${i + 1}`,
     chapter: "Learn",
     beats: 2,
@@ -614,6 +659,7 @@ export const STAGES: Stage[] = [
   {
     id: "cost-claim",
     kind: "cost-claim",
+    panel: "quiet",
     label: "We couldn't afford it",
     chapter: "Cost",
     beats: 1,
@@ -627,6 +673,7 @@ export const STAGES: Stage[] = [
   {
     id: "cost-reality",
     kind: "cost-reality",
+    panel: "quiet",
     label: "Can we afford the failure?",
     chapter: "Cost",
     beats: 1 + COST_ITEMS.length,
@@ -641,6 +688,7 @@ export const STAGES: Stage[] = [
   {
     id: "final-machine",
     kind: "final",
+    panel: "quiet",
     label: "The machine failed last",
     chapter: "Close",
     beats: 2,
@@ -654,6 +702,7 @@ export const STAGES: Stage[] = [
   {
     id: "final-truth",
     kind: "truth",
+    panel: "quiet",
     label: "No shortcut",
     chapter: "Close",
     beats: FINAL_TRUTHS.length,
@@ -667,6 +716,7 @@ export const STAGES: Stage[] = [
   {
     id: "closing",
     kind: "closing",
+    panel: "quiet",
     label: "Closing",
     chapter: "Close",
     beats: 2,
