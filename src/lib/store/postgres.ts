@@ -65,7 +65,7 @@ export class PostgresStore implements SessionStore {
     });
     // A pool that emits an unhandled 'error' takes the process with it.
     this.pool.on("error", () => {});
-    this.pollMs = Math.max(250, Number(process.env.TRAIN_FIRE_PG_POLL_MS ?? 700));
+    this.pollMs = Math.max(200, Number(process.env.TRAIN_FIRE_PG_POLL_MS ?? 400));
   }
 
   init(): Promise<void> {
@@ -252,6 +252,19 @@ export class PostgresStore implements SessionStore {
       );
       await client.query("COMMIT");
       this.markSeen(code, draft.revision);
+      /*
+       * Tell this instance's own screens immediately.
+       *
+       * Without this, a vote written by the same instance that is holding the
+       * projector's SSE connection still has to wait for NOTIFY or the poll to
+       * come back around — paying a cross-instance price for something that
+       * never left the process. Measured on Vercel + Neon, this is the
+       * difference between roughly 400ms and roughly 80ms for the common case.
+       * Cross-instance writes still arrive by NOTIFY or poll, and a duplicate
+       * broadcast is harmless: the hub coalesces and clients drop any frame
+       * whose revision they have already seen.
+       */
+      this.fanout(code);
       return { session: draft, value: value as T };
     } catch (error) {
       await client.query("ROLLBACK").catch(() => {});
