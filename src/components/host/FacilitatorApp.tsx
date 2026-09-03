@@ -29,7 +29,14 @@ export function FacilitatorApp({ code }: { code: string }) {
   const { state, send } = api;
 
   const run = useCallback((command: ControlCommand) => void send(command), [send]);
-  useKeyboardControls(run, Boolean(state));
+
+  /*
+   * While the projector is filling the screen it is the thing with focus, and
+   * it has its own arrow-key handling. Standing the console's handler down for
+   * the duration is what stops one press of a clicker advancing the room twice.
+   */
+  const projecting = useFullscreen();
+  useKeyboardControls(run, Boolean(state) && !projecting);
 
   if (!token) return <NoToken code={code} />;
 
@@ -109,16 +116,41 @@ function Header({
   );
 }
 
+/** True while any element on this page is filling the screen. */
+function useFullscreen(): boolean {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    const sync = () => setOn(Boolean(document.fullscreenElement));
+    sync();
+    document.addEventListener("fullscreenchange", sync);
+    document.addEventListener("webkitfullscreenchange", sync);
+    return () => {
+      document.removeEventListener("fullscreenchange", sync);
+      document.removeEventListener("webkitfullscreenchange", sync);
+    };
+  }, []);
+  return on;
+}
+
 /**
- * A live miniature of the projector.
+ * A live miniature of the projector, and the one control that puts it on the
+ * wall.
  *
- * The console used to describe what was on screen in words. Showing the actual
- * thing removes a whole category of live mistake — the facilitator never has to
- * translate "stage 12, beat 4" into what the room is looking at.
+ * The preview is not a mock-up — it is `/present/<code>`, the same document the
+ * room sees, on its own live connection. That is what makes Full screen simple:
+ * there is no new tab to open, no session to re-find, and nothing to
+ * re-synchronise. The thing already showing the right frame is the thing that
+ * grows to fill the display, so the stage, the beat, the votes, the revealed
+ * results and the cumulative board are all carried across by definition.
+ *
+ * Escape hands the screen back, the console is exactly where it was, and the
+ * session never noticed.
  */
 function OnScreen({ code, state }: { code: string; state: FacilitatorState }) {
   const box = useRef<HTMLDivElement | null>(null);
+  const frame = useRef<HTMLIFrameElement | null>(null);
   const [scale, setScale] = useState(0.3);
+  const projecting = useFullscreen();
   const W = 1600;
   const H = 900;
 
@@ -132,30 +164,96 @@ function OnScreen({ code, state }: { code: string; state: FacilitatorState }) {
     return () => ro.disconnect();
   }, []);
 
+  const project = async () => {
+    // Defensive only: the button is not reachable while something is already
+    // filling the screen, but if it ever is, hand the screen back.
+    if (document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => {});
+      return;
+    }
+    const el = frame.current;
+    const request =
+      el?.requestFullscreen ??
+      (el as unknown as { webkitRequestFullscreen?: () => Promise<void> })?.webkitRequestFullscreen;
+    if (el && request) {
+      try {
+        await request.call(el, { navigationUI: "hide" });
+        return;
+      } catch {
+        // Blocked or unsupported — fall through rather than dead-end.
+      }
+    }
+    /*
+     * Fallback for a browser that will not grant fullscreen: the clean
+     * projector view in its own tab, same session, no console chrome. Not
+     * fullscreen, but one F11 away — and never a broken flow.
+     */
+    window.open(`/present/${encodeURIComponent(code)}`, "_blank", "noopener");
+  };
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-baseline justify-between">
+      <div className="flex items-center justify-between gap-3">
         <span className="eyebrow text-ink-3">On the projector</span>
-        <span className="text-xs text-ink-3 tnum">
-          {state.stageIndex + 1} of {state.stageCount}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-ink-3 tnum">
+            {state.stageIndex + 1} of {state.stageCount}
+          </span>
+          {/*
+            The label never says "exit". A fullscreen element covers the whole
+            window, so while the projector is up this button is not on screen to
+            be read or pressed — Escape is the way back, and the browser
+            guarantees it. Promising an exit control the facilitator can never
+            see would be worse than saying nothing.
+          */}
+          <button
+            type="button"
+            onClick={project}
+            title="Fill the display with the projector view. Press Esc to come back."
+            className="inline-flex items-center gap-1.5 rounded-lg border border-rule bg-surface px-3 py-1.5 text-sm font-semibold text-ink-2 transition-colors hover:border-ink hover:bg-paper-2 hover:text-ink"
+          >
+            <ExpandIcon />
+            Full screen
+          </button>
+        </div>
       </div>
       <div
         ref={box}
         className="mt-2 flex min-h-60 flex-1 items-center justify-center overflow-hidden rounded-xl border border-rule bg-paper-2"
       >
         <iframe
-          title="Projector preview"
+          ref={frame}
+          title="Projector"
           src={`/present/${code}`}
           width={W}
           height={H}
-          // Pointer events off so a stray click cannot steal focus from the
-          // controls; the preview is for looking at, not driving.
-          className="pointer-events-none shrink-0 border-0 bg-paper"
-          style={{ transform: `scale(${scale})`, transformOrigin: "center" }}
+          className={cn(
+            "shrink-0 border-0 bg-paper",
+            // A stray click on a 300px preview should do nothing. Filling the
+            // screen, it is the projector — so its own arrows become live.
+            projecting ? "pointer-events-auto" : "pointer-events-none",
+          )}
+          style={
+            projecting
+              ? { transform: "none", width: "100vw", height: "100vh" }
+              : { transform: `scale(${scale})`, transformOrigin: "center" }
+          }
         />
       </div>
     </div>
+  );
+}
+
+function ExpandIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5" fill="none">
+      <path
+        d="M6 1.5H1.5V6M10 1.5h4.5V6M10 14.5h4.5V10M6 14.5H1.5V10"
+        stroke="currentColor"
+        strokeWidth={1.8}
+        strokeLinecap="square"
+      />
+    </svg>
   );
 }
 
@@ -416,6 +514,19 @@ function MoreMenu({
                   {copied ? "Link copied" : "Copy participant link"}
                 </Item>
                 <Item onClick={() => setJump(true)}>Jump to section…</Item>
+                {/*
+                  Full screen covers the mirrored-display case. This covers the
+                  other one: a second screen the projector needs to be dragged
+                  onto, which needs a window of its own.
+                */}
+                <Item
+                  onClick={() => {
+                    window.open(`/present/${encodeURIComponent(code)}`, "_blank", "noopener");
+                    close();
+                  }}
+                >
+                  Open projector in a new window
+                </Item>
 
                 <Divider />
 
