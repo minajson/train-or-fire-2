@@ -48,7 +48,7 @@ export function BriefingPanel({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={ENTER}
-            className="min-h-0 flex-1"
+            className="min-h-0 flex-1 overflow-hidden"
           >
             {mode === "briefing" ? (
               <Incident />
@@ -77,7 +77,7 @@ function Incident() {
       <h2 className="font-mono text-[length:var(--text-brief-label)] font-medium uppercase tracking-[0.24em] text-ink-3">
         The incident
       </h2>
-      <div className="mt-[3.5cqh] space-y-[2.4cqh]">
+      <div className="mt-[3cqh] space-y-[2cqh]">
         {INCIDENT_BRIEF.map((line, i) => (
           <p
             key={i}
@@ -105,7 +105,7 @@ function WhatWeKnow() {
       <h2 className="font-mono text-[length:var(--text-brief-label)] font-medium uppercase tracking-[0.24em] text-ink-3">
         What we know
       </h2>
-      <ul className="mt-[3.5cqh] space-y-[2.2cqh]">
+      <ul className="mt-[3cqh] space-y-[1.8cqh]">
         {EVIDENCE_LINES.map((line) => (
           <li
             key={line}

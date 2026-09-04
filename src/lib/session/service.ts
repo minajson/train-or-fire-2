@@ -9,6 +9,7 @@ import {
   type Question,
 } from "@/lib/content/activity";
 import { buildFacilitatorState, buildPublicState } from "@/lib/engine/state";
+import { captureSnapshot } from "@/lib/engine/tally";
 import { facilitatorToken, joinCode, participantSecret, safeEqual, uuid } from "@/lib/security/ids";
 import { getStore, type SessionStore } from "@/lib/store";
 import { CodeTakenError } from "@/lib/store/postgres";
@@ -88,6 +89,7 @@ async function insertSession(
     beat: 0,
     overlay: null,
     phases: {},
+    snapshots: {},
     settings: { ...DEFAULT_SETTINGS },
     revision: 1,
     createdAt: now,
@@ -280,10 +282,38 @@ const clampStage = (n: number) => Math.max(0, Math.min(STAGE_COUNT - 1, Math.tru
 /** Last beat of a stage — where Back lands, so a built chain returns built. */
 const lastBeat = (index: number) => Math.max(0, (getStage(index)?.beats ?? 1) - 1);
 
+/**
+ * Moves a question into a phase, and keeps the result record honest while
+ * doing it.
+ *
+ * Revealing FREEZES the count. Reopening voting DISCARDS the frozen count,
+ * because a result the room can still change is not a result. Locking touches
+ * neither — it closes the door without saying what is behind it.
+ *
+ * This is the whole guarantee the projector rests on: between a reveal and an
+ * explicit reopen, the numbers on the wall cannot move.
+ */
+function revealQuestion(draft: SessionRecord, question: Question) {
+  draft.phases[question.id] = "revealed";
+  // Re-revealing something already revealed must not re-count it — votes can
+  // arrive by another route, and the room has already seen a number.
+  draft.snapshots ??= {};
+  draft.snapshots[question.id] ??= captureSnapshot(draft, question);
+}
+
+function clearSnapshot(draft: SessionRecord, questionId: string) {
+  if (draft.snapshots) delete draft.snapshots[questionId];
+}
+
 function setPhase(draft: SessionRecord, phase: Phase) {
   const q = stageQuestion(draft.stageIndex);
   if (!q) return false;
+  if (phase === "revealed") {
+    revealQuestion(draft, q);
+    return true;
+  }
   draft.phases[q.id] = phase;
+  if (phase === "voting") clearSnapshot(draft, q.id);
   return true;
 }
 
@@ -327,6 +357,7 @@ export async function applyControl(
       case "restart":
         draft.responses = [];
         draft.phases = {};
+        draft.snapshots = {};
         draft.stageIndex = 0;
         draft.beat = 0;
         draft.overlay = null;
@@ -356,7 +387,7 @@ export async function applyControl(
          */
         const question = stageQuestion(draft.stageIndex);
         if (question && (draft.phases[question.id] ?? "voting") !== "revealed") {
-          draft.phases[question.id] = "revealed";
+          revealQuestion(draft, question);
           break;
         }
 
@@ -443,6 +474,7 @@ export async function applyControl(
         if (!q) return false;
         draft.responses = draft.responses.filter((r) => r.questionId !== q.id);
         draft.phases[q.id] = "voting";
+        clearSnapshot(draft, q.id);
         break;
       }
 

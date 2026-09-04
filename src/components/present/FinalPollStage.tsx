@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { cn } from "@/lib/cn";
 import { getQuestion } from "@/lib/content/activity";
 import { ENTER, MOVE } from "@/lib/motion/primitives";
+import { SignalPulse } from "./scene/Industrial";
 import type { PublicSessionState } from "@/lib/types";
 import { StageFrame } from "./StageFrame";
 
@@ -23,8 +24,10 @@ interface Row {
  */
 export function FinalPollStage({ state }: { state: PublicSessionState }) {
   const question = getQuestion(state.stage?.questionId);
-  const revealed = state.phase === "revealed";
   const results = state.results;
+  // A revealed question with no votes behind it is not a result. Drawing seven
+  // bars at 0% would say the room answered and chose nothing.
+  const revealed = state.phase === "revealed" && Boolean(results?.hasVotes);
 
   const rows: Row[] = (question?.options ?? []).map((o) => {
     const tally = results?.options.find((t) => t.optionId === o.id);
@@ -46,13 +49,18 @@ export function FinalPollStage({ state }: { state: PublicSessionState }) {
           failed first?
         </h1>
         {!revealed ? (
-          <div className="display tnum shrink-0 text-stage-md text-ink-2">
-            {state.counts.responses}
-            <span className="text-ink-3"> / {state.counts.total}</span>
-            <span className="stage-eyebrow ml-[0.8cqw] text-ink-3">Decided</span>
+          <div className="flex shrink-0 items-center gap-[1cqw]">
+            <SignalPulse tone="ink" size={11} active={state.status === "live"} />
+            <span className="stage-eyebrow text-ink-3">
+              {state.phase === "revealed" ? "No votes yet" : "Voting live"}
+            </span>
+            <span className="display text-stage-md text-ink-2 tnum">
+              {state.counts.responses}
+              <span className="text-ink-3"> / {state.counts.total}</span>
+            </span>
           </div>
         ) : (
-          <div className="stage-eyebrow shrink-0 text-ink-3">
+          <div className="stage-eyebrow shrink-0 text-ink-3 tnum">
             {results?.totalResponses ?? 0} responses
           </div>
         )}

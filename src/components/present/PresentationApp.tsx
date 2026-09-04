@@ -153,7 +153,7 @@ function renderStage(state: PublicSessionState, origin: string) {
     case "verdict":
       return <VerdictStage state={state} />;
     case "twist":
-      return <TwistStage beat={state.beat} />;
+      return <TwistStage beat={state.beat} board={state.board} />;
     case "rewind":
       return <RewindStage beat={state.beat} />;
     case "question":

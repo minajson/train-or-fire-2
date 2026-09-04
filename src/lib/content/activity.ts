@@ -20,7 +20,7 @@
 /* Roles                                                               */
 /* ------------------------------------------------------------------ */
 
-export type RoleId = "engineer" | "finance" | "operations" | "maintenance";
+export type RoleId = "md" | "finance" | "operations" | "maintenance";
 
 /** The two destinations. Never rendered as colour alone — always word + mark. */
 export type Verdict = "train" | "fire";
@@ -43,22 +43,32 @@ export interface Role {
 
 export const ROLES: Role[] = [
   {
-    id: "engineer",
+    id: "md",
     marker: "ROLE 01",
-    title: "Maintenance Engineer",
-    short: "Maintenance Engineer",
+    title: "Managing Director",
+    short: "Managing Director",
+    /*
+     * The nuanced one, deliberately.
+     *
+     * The MD maintained nothing and rejected nothing. What they held was the
+     * only authority that could have forced escalation, funding, shutdown or a
+     * signed risk acceptance — and they left the matter with the functional
+     * teams. That gap is the whole discussion: delegation, or leadership
+     * failure?
+     */
     facts: [
-      "Detected the warning signs.",
-      "Raised the maintenance request.",
-      "When nothing happened, continued monitoring but did not escalate further.",
+      "Received repeated updates that the machine was deteriorating.",
+      "Knew the OEM intervention had been recommended.",
+      "Was also under pressure to protect production targets and control cost.",
+      "Allowed the matter to remain with the functional teams instead of forcing a final risk-based decision.",
     ],
     phoneFacts: [
-      "Detected warning signs.",
-      "Raised maintenance request.",
-      "Didn't escalate further.",
+      "Knew the machine was deteriorating.",
+      "Knew OEM support was recommended.",
+      "Left it with the functional teams.",
     ],
-    quote: "I raised it. It was documented.",
-    questionId: "role-engineer",
+    quote: "I expected the teams to resolve it.",
+    questionId: "role-md",
   },
   {
     id: "finance",
@@ -69,7 +79,11 @@ export const ROLES: Role[] = [
       "Rejected the OEM request because there wasn't enough budget.",
       "Asked the team to find a cheaper alternative.",
     ],
-    phoneFacts: ["Rejected the OEM request.", "No budget available.", "Asked for something cheaper."],
+    phoneFacts: [
+      "Rejected the OEM request.",
+      "No budget available.",
+      "Asked for something cheaper.",
+    ],
     quote: "We couldn't afford the OEM.",
     questionId: "role-finance",
   },
@@ -118,17 +132,31 @@ export const getRole = (id: RoleId | null | undefined): Role | null =>
 /* The incident                                                        */
 /* ------------------------------------------------------------------ */
 
-/** Full narrative — projector only, built one line per beat. */
+/**
+ * Full narrative — projector only, built one line per beat.
+ *
+ * Seven short lines rather than a paragraph. One of them — "Senior leadership
+ * was aware" — is doing structural work: without it the Managing Director is a
+ * role the room has no evidence for, and the MD decision becomes a guess.
+ */
 export const INCIDENT_LINES: string[] = [
   "A critical production machine has failed, stopping operations.",
-  "For several weeks, the machine had shown abnormal readings.",
-  "Maintenance recommended preventive work and OEM support.",
-  "The work didn't happen.",
+  "For several weeks, abnormal readings showed the machine was deteriorating.",
+  "Preventive work and OEM support were recommended.",
+  "Cost and production pressure delayed action.",
+  "Senior leadership was aware.",
+  "The work did not happen.",
   "Now production is down.",
 ];
 
 /**
  * The scenario as it sits in the left column for the whole judging sequence.
+ *
+ * Five lines, not the narrative's seven. This column shares its height with
+ * the join code for the entire judging sequence, and a briefing that grows
+ * until it slides under the QR is worse than one that is a sentence shorter.
+ * So the two beats that read as one thought — the delay and leadership knowing
+ * about it — are set as one line here, and the stage keeps them separate.
  *
  * Split into runs so a handful of phrases can carry bold weight — the ones a
  * facilitator points at — without tinting the panel with colour. This is a
@@ -142,10 +170,27 @@ export interface BriefRun {
 }
 
 export const INCIDENT_BRIEF: BriefRun[][] = [
-  [{ t: "A " }, { t: "critical production machine", b: true }, { t: " has failed, stopping operations." }],
-  [{ t: "For several weeks, the machine showed " }, { t: "abnormal readings", b: true }, { t: "." }],
-  [{ t: "Preventive work", b: true }, { t: " and " }, { t: "OEM support", b: true }, { t: " were recommended." }],
-  [{ t: "The work didn\u2019t happen." }],
+  [
+    { t: "A " },
+    { t: "critical production machine", b: true },
+    { t: " has failed, stopping operations." },
+  ],
+  [
+    { t: "For weeks, " },
+    { t: "abnormal readings", b: true },
+    { t: " showed it was deteriorating." },
+  ],
+  [
+    { t: "Preventive work", b: true },
+    { t: " and " },
+    { t: "OEM support", b: true },
+    { t: " were recommended." },
+  ],
+  [
+    { t: "Cost and production pressure delayed action. " },
+    { t: "Senior leadership was aware", b: true },
+    { t: "." },
+  ],
   [{ t: "Now " }, { t: "production is down", b: true }, { t: "." }],
 ];
 
@@ -159,10 +204,58 @@ export const EVIDENCE_LINES: string[] = [
   "Warnings existed.",
   "Preventive work recommended.",
   "OEM request declined.",
+  "Leadership was aware.",
   "Production continued.",
   "Temporary fix attempted.",
   "Machine failed.",
 ];
+
+/* ------------------------------------------------------------------ */
+/* The machine                                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The condition sequence the incident schematic walks through, one step per
+ * beat of the incident stage.
+ *
+ * Every value here drives a drawing, not a claim: `vibration` and `heat` are
+ * normalised 0–1 and feed the waveform amplitude and the bearing temperature
+ * marker. They are deliberately monotonic apart from step 4 — the temporary
+ * stabilisation — because that dip is the part of a real deterioration curve
+ * that fools people, and the room should watch it happen.
+ */
+export type MachineCondition = "normal" | "watch" | "warning" | "critical" | "failed";
+
+export interface MachineStep {
+  label: string;
+  condition: MachineCondition;
+  /** Waveform amplitude, 0–1. */
+  vibration: number;
+  /** Bearing temperature marker position, 0–1. */
+  heat: number;
+  /** Shaft rotation speed multiplier. 0 once the machine has tripped. */
+  speed: number;
+}
+
+export const MACHINE_STEPS: MachineStep[] = [
+  { label: "Normal operation", condition: "normal", vibration: 0.1, heat: 0.16, speed: 1 },
+  { label: "Vibration rising", condition: "watch", vibration: 0.34, heat: 0.3, speed: 0.98 },
+  { label: "Temperature rising", condition: "watch", vibration: 0.46, heat: 0.52, speed: 0.96 },
+  { label: "Warning", condition: "warning", vibration: 0.62, heat: 0.66, speed: 0.93 },
+  { label: "Temporary stabilisation", condition: "watch", vibration: 0.38, heat: 0.48, speed: 0.95 },
+  { label: "Warning returns", condition: "critical", vibration: 0.82, heat: 0.84, speed: 0.88 },
+  { label: "Failure", condition: "failed", vibration: 0, heat: 1, speed: 0 },
+];
+
+/**
+ * Optional footage of the failure, dropped in at this path.
+ *
+ * The app never depends on it. When the file is absent — which is the state
+ * the repository ships in — the incident stage draws the animated schematic
+ * instead, and nothing about the session changes. See
+ * `docs/MACHINE_FAILURE_VIDEO_PROMPT.md`.
+ */
+export const MACHINE_VIDEO_SRC = "/media/machine-failure.mp4";
 
 /* ------------------------------------------------------------------ */
 /* The failure chain                                                   */
@@ -172,6 +265,8 @@ export interface ChainLink {
   /** 1-based; matches the chain-question option ids. */
   n: number;
   title: string;
+  /** For the compact strip, where seven links share one line. */
+  short: string;
   detail: string[];
   /** The intervention that was available here. Absent on the terminal link. */
   opportunity: string | null;
@@ -183,42 +278,49 @@ export const CHAIN: ChainLink[] = [
   {
     n: 1,
     title: "Warning detected",
+    short: "Warning",
     detail: ["Abnormal readings appeared."],
     opportunity: "Opportunity to act",
   },
   {
     n: 2,
     title: "Preventive work recommended",
+    short: "Preventive work",
     detail: ["OEM intervention requested."],
     opportunity: "Opportunity to act",
   },
   {
     n: 3,
-    title: "No budget",
+    title: "Budget block",
+    short: "Budget block",
     detail: ["Preferred intervention not funded."],
     opportunity: "Opportunity to escalate",
   },
   {
     n: 4,
-    title: "Keep production running",
+    title: "Production pressure",
+    short: "Production pressure",
     detail: ["Continued operation chosen."],
     opportunity: "Opportunity to reassess",
   },
   {
     n: 5,
     title: "Temporary fix",
+    short: "Temporary fix",
     detail: ["Readings improved.", "The underlying problem remained."],
     opportunity: "Opportunity to verify",
   },
   {
     n: 6,
     title: "Warning returns",
+    short: "Warning returns",
     detail: ["Deterioration came back."],
     opportunity: "Opportunity to stop",
   },
   {
     n: 7,
     title: "Failure",
+    short: "Failure",
     detail: ["Production stops."],
     opportunity: null,
     terminal: true,
@@ -315,7 +417,7 @@ export function verdictOptionId(questionId: string, verdict: Verdict): string {
 /* ------------------------------------------------------------------ */
 
 export const SYSTEM_REPLACEMENTS: { role: string; unchanged: string }[] = [
-  { role: "New Maintenance Engineer.", unchanged: "Same escalation process." },
+  { role: "New Managing Director.", unchanged: "Same escalation gap." },
   { role: "New Finance Manager.", unchanged: "Same budget pressure." },
   { role: "New Operations Manager.", unchanged: "Same production pressure." },
   { role: "New Maintenance Manager.", unchanged: "Same shortcut culture." },
@@ -499,32 +601,28 @@ export const STAGES: Stage[] = [
     },
   },
   decisionStage(ROLES[0], {
-    ask: "Could this person alone have prevented the failure?",
-    probe: "What would you need to know before firing them?",
-    learning: "Raising a request is not the same as escalating a risk — but the system has to make escalation possible.",
-    talkingPoint:
-      "This one usually splits the room. Some people see someone who did their job and documented it. Others see someone who watched a known risk sit still for weeks. Both readings are defensible, and the gap between them is where your escalation procedure lives.",
+    ask: "Was this appropriate delegation, or should the MD have forced a decision?",
+    probe: "At what point does an unresolved technical issue become a leadership issue?",
+    learning:
+      "Senior leaders do not need to perform the technical work, but they remain accountable for ensuring material risks are escalated, owned and resolved.",
   }),
   decisionStage(ROLES[1], {
     ask: "Was this a financial decision or a risk decision?",
-    probe: "Who was responsible for saying 'no budget doesn't mean no risk'?",
-    learning: "Declining funding transfers risk; it never removes it.",
-    talkingPoint:
-      "Finance is usually the easiest one to fire, because the decision looks like a spreadsheet. Ask the room what information Finance was given. A rejected line item and a rejected risk assessment are very different documents.",
+    probe: "What should happen when the preferred technical solution cannot be funded?",
+    learning:
+      "Budget pressure changes the available options. It does not remove the underlying risk.",
   }),
   decisionStage(ROLES[2], {
-    ask: "Was continued operation an unreasonable decision at the time?",
-    probe: "What would have had to be true for stopping production to be the obvious call?",
-    learning: "Judgement made under production pressure looks different before the failure than after it.",
-    talkingPoint:
-      "'The readings weren't at trip level yet' is technically true and completely insufficient. Trip levels tell you when the machine will protect itself. They don't tell you when you should have intervened.",
+    ask: "When does protecting production begin to threaten production?",
+    probe: "What evidence would justify continued operation?",
+    learning:
+      "Continued operation under abnormal conditions must be supported by a defined, technically authorised operating envelope.",
   }),
   decisionStage(ROLES[3], {
-    ask: "Was the temporary fix wrong, or was the way it was used wrong?",
-    probe: "Who authorised the workaround, and who verified it?",
-    learning: "Temporary solutions are legitimate engineering — unassessed ones are not.",
-    talkingPoint:
-      "Watch how the room reacts to 'the readings improved'. A temporary fix that hides a symptom is more dangerous than no fix at all, because it buys silence.",
+    ask: "Was the cheaper intervention a practical solution or an uncontrolled shortcut?",
+    probe: "What would make a non-OEM alternative technically acceptable?",
+    learning:
+      "Alternatives are possible, but competence, technical equivalence, authorisation and verification still matter.",
   }),
   {
     id: "verdict",

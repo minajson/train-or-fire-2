@@ -1,9 +1,16 @@
 # Train or Fire — The Warning Signs
 
 A live decision experience for a hybrid HSE session. A critical machine has
-failed. Four roles were involved. The room decides, one role at a time, whether
-to **train** or **fire** each of them — and then discovers what that decision
-actually fixed.
+failed. Four roles were involved — **Managing Director**, **Finance Manager**,
+**Operations Manager**, **Maintenance Manager**. The room decides, one role at a
+time, whether to **train** or **fire** each of them — and then discovers what
+that decision actually fixed.
+
+The Managing Director is the deliberately nuanced one. They maintained nothing
+and rejected nothing; what they held was the only authority that could have
+forced escalation, funding, shutdown or a signed risk acceptance, and they left
+the matter with the functional teams. Delegation, or leadership failure — that
+argument is the point of role 01.
 
 The activity is built around one turn. It spends its first half inviting
 judgement and its second half examining it, moving the conversation from *"who
@@ -71,16 +78,15 @@ drift apart.
 ┌───────────────────────────────────────────────────────────────┐
 │ TRAIN OR FIRE                              ● LIVE · 34 JOINED │
 ├──────────────────┬────────────────────────────────────────────┤
-│ THE INCIDENT     │  DECISION 03 / 04         30 / 31 DECIDED   │
+│ THE INCIDENT     │  DECISION 03 / 04         ◉ 30 / 31 DECIDED│
 │                  │                                            │
-│ A critical …     │  Operations Manager                        │
-│ …abnormal        │  Wouldn't stop production early.           │
-│  readings…       │  “The readings weren't at trip level yet.” │
-│                  │                                            │
-│                  │  ┌── ↑ TRAIN ──┐  ┌── ✕ FIRE ──┐           │
-│ ────────────     │  │             │  │            │           │
-│ [ QR ]  JOIN     │  │ Engineer 71%│  │            │           │
-│         6730     │  │ Finance  63%│  │            │      ← →  │
+│ A critical …     │  Wouldn't stop production early.           │
+│ …abnormal        │  “The readings weren't at trip level yet.” │
+│  readings…       │                                            │
+│                  │  ┌── ↑ TRAIN ──┐  ┌── ✕ FIRE ─────────┐    │
+│ ────────────     │  │     58%     │  │      68%          │    │
+│ [ QR ]  JOIN     │  │             │  │ ▌Operations Mgr │  │    │
+│         6730     │  │ ▌MD    58%  │  │ Finance     61% │ ← →  │
 └──────────────────┴────────────────────────────────────────────┘
 ```
 
@@ -165,12 +171,40 @@ the code and for the emergency jump menu, not for the console.
 Adding or reordering a stage means editing that one file. Nothing in the store,
 transport, or control layers needs to change.
 
-### The board
+### The board, and why a revealed result is frozen
 
-The TRAIN/FIRE board is **derived on every read** from the votes themselves
-(`src/lib/engine/board.ts`), never stored. A role appears on it only once its
-own question has been revealed. That is what lets the board build up across the
-four decisions and survive any amount of navigating backwards and forwards.
+A role appears on the TRAIN/FIRE board only once its own question has been
+revealed, which is what lets the board build up across the four decisions.
+
+**Revealing a question writes down what it revealed.** `reveal` captures a
+`ResultSnapshot` — raw per-option counts, plus the timestamp — into the session
+record, and every screen reads the board from that snapshot rather than
+recounting the response list (`src/lib/engine/board.ts`,
+`src/lib/engine/tally.ts`).
+
+The board used to be recomputed from `responses` on every read. That is correct
+right up until something removes a response, and three things can: `restart`,
+`resetStage`, and `clearSimulated`. Each of them silently rewrote percentages
+that were already on the wall — a facilitator who cleared the rehearsal crowd
+mid-session watched the room's real verdicts drop to 0% with no way to get them
+back. A number an audience has seen has to be a fact, not a query.
+
+So the only three commands that can take a result off the board are the three
+that say so out loud: **unlock** (voting reopens), **resetStage** (the question
+is cleared), **restart** (the session starts over). `next`, `back`, `goto`, a
+reload, a redeploy and a change to the participant list cannot touch it.
+
+Two board placements are deliberately not a side:
+
+| `placement` | Means | Shown as |
+| --- | --- | --- |
+| `train` / `fire` | A real majority, from real votes | The percentage, in its zone |
+| `split` | An exact tie | The token centred, "Split decision" |
+| `pending` | Revealed with nobody having voted | "No votes yet" / "Pending" |
+
+`pending` exists because "TRAIN 0% / FIRE 0%" reads as a decision when it is the
+absence of one, and a facilitator pressing Next past an unanswered question is
+the ordinary way to produce it. Nothing in the app renders 0% as a verdict.
 
 ### What is withheld, and when
 
@@ -314,6 +348,71 @@ rather than letting it be discovered thirty seconds into a live session.
 
 ---
 
+## The 2D scene system
+
+The projector is drawn, not decorated. Everything visual in the session is flat
+vector — SVG paths, strokes, and a handful of transforms — and it lives in
+[`src/components/present/scene/`](src/components/present/scene/) plus
+[`src/lib/motion/primitives.tsx`](src/lib/motion/primitives.tsx). No WebGL, no
+canvas, no particle system: this has to stay smooth on whatever laptop is
+plugged into the projector.
+
+| Piece | What it is |
+| --- | --- |
+| `MachineSchematic` | The pump package in elevation, walking a seven-step condition sequence |
+| `MachinePanel` | A 16:9 frame holding the schematic, or footage if any exists |
+| `WarningWave` | A live vibration trace — 1× running speed plus a second harmonic |
+| `SignalPulse` | A status lamp: rings out of a solid centre |
+| `RiskMarker` | "Opportunity to act", drawn as a cut across the causal path |
+| `AmbientLinework` | The ghosted drawing sheet behind the title and join screens |
+| `RoleToken` / `TokenSlot` / `TokenArena` | The role as a physical tag, and its journey |
+| `ChainView` | The failure chain as connected nodes |
+
+Four rules keep it reading as instrumentation rather than ornament:
+
+1. **Line first.** Fills appear only where something is genuinely a solid object
+   — a token, a status lamp — never as a gradient wash.
+2. **Colour is state.** Red means the machine has tripped. Amber means a warning
+   is live. Nothing is tinted for atmosphere.
+3. **One waveform per screen.** A trace that is decoration stops meaning "this
+   is the machine".
+4. **Nothing physically impossible.** The audience is operations and maintenance
+   people who will find the lie instantly, and the moment they do, the argument
+   the session is making stops being credible. So the shaft *slows* as the
+   bearing degrades rather than visibly wobbling; vibration shows up as trace
+   amplitude and a millimetre-scale tremor; the temperature recovers across the
+   temporary fix and then goes further; and the trip is a **stop**, not an
+   explosion, because that is what a protection system doing its job looks like.
+
+### The reveal is one object moving
+
+The role token renders under a shared Framer `layoutId`. Before the reveal it
+sits at the head of its own evidence; after it, the same element is rendered
+inside the zone the room chose, and Framer measures both and springs between
+them. Nothing computes a coordinate, which is why the ~700ms travel lands
+correctly on 1366×768 and 1920×1080 without a hard-coded offset anywhere.
+
+A count-up belongs to the **moment** of a reveal, so `CountPct` takes an
+`enabled` flag and the decision stage answers it from the snapshot timestamp
+against `serverTime`. Coming back to an already-decided role lands the figures
+on their real values immediately. Sweeping them up from zero again is the same
+"it fell back to 0%" the room reports — a second is long enough to read the wall
+and believe it.
+
+### The machine failure video
+
+The incident screen has an optional slot at `public/media/machine-failure.mp4`.
+The panel renders the schematic first and swaps to the video only once the
+browser reports `canplay`; if the file is absent the request 404s, `canplay`
+never fires, and the screen simply never changes. There is no error state to
+recover from. Muted, looping, no controls, no external URL — a conference
+network that cannot reach a CDN must not be able to break the session.
+
+The generation prompt and the constraints the footage has to respect are in
+[`docs/MACHINE_FAILURE_VIDEO_PROMPT.md`](docs/MACHINE_FAILURE_VIDEO_PROMPT.md).
+
+---
+
 ## Accessibility
 
 - TRAIN and FIRE never rely on colour. Both always carry the **word** and a
@@ -325,7 +424,10 @@ rather than letting it be discovered thirty seconds into a live session.
 - Every ink step clears 4.5:1 on the paper background; white on train and white
   on fire clear 6.0:1 and 5.2:1.
 - `prefers-reduced-motion` strips the journey and keeps the destination: bars
-  reach their final width and counters land on their final number immediately.
+  reach their final width, counters land on their final number, the token
+  arrives in its zone, and the machine reaches its failed state — all
+  immediately. Nothing in the activity is comprehensible only if you watched it
+  move. Every scene component reads the same `useMotionOff()` helper.
 
 ---
 

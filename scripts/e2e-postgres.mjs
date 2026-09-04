@@ -85,8 +85,8 @@ const stageOf = async (id) => {
  * write it back — and without SELECT … FOR UPDATE, most of those writes land on
  * a stale document and the room loses votes it can see people casting.
  */
-const engineerStage = await stageOf("decide-engineer");
-await post(`/api/sessions/${code}/control`, { command: { type: "goto", stageIndex: engineerStage } }, hostHdr);
+const mdStage = await stageOf("decide-md");
+await post(`/api/sessions/${code}/control`, { command: { type: "goto", stageIndex: mdStage } }, hostHdr);
 
 const FIRE_VOTERS = 9;
 const results = await Promise.all(
@@ -94,8 +94,8 @@ const results = await Promise.all(
     post(
       `/api/sessions/${code}/vote`,
       {
-        questionId: "role-engineer",
-        optionId: i < FIRE_VOTERS ? "role-engineer:fire" : "role-engineer:train",
+        questionId: "role-md",
+        optionId: i < FIRE_VOTERS ? "role-md:fire" : "role-md:train",
       },
       p.hdr,
     ),
@@ -123,8 +123,8 @@ check(
 
 await post(`/api/sessions/${code}/control`, { command: { type: "reveal" } }, hostHdr);
 const revealed = await get(`/api/sessions/${code}`);
-const train = revealed.data.results.options.find((o) => o.optionId === "role-engineer:train");
-const fire = revealed.data.results.options.find((o) => o.optionId === "role-engineer:fire");
+const train = revealed.data.results.options.find((o) => o.optionId === "role-md:train");
+const fire = revealed.data.results.options.find((o) => o.optionId === "role-md:fire");
 check(
   "the persisted tally is exactly the votes cast",
   train.count === PEOPLE - FIRE_VOTERS && fire.count === FIRE_VOTERS,
@@ -173,7 +173,7 @@ check(
 );
 check(
   "the board reflects the majorities that were actually voted",
-  boardShape === "engineer:train,finance:train,operations:fire,maintenance:fire",
+  boardShape === "md:train,finance:train,operations:fire,maintenance:fire",
   boardShape,
 );
 
@@ -261,6 +261,51 @@ check(
   "no other role gained a vote from the late joiner",
   withLate.data.board.filter((b) => b.roleId !== "operations").every((b) => b.total === PEOPLE),
   withLate.data.board.map((b) => `${b.roleId}:${b.total}`).join(" "),
+);
+
+/* ---- a revealed result is frozen, and the freeze is persisted ------ */
+
+/*
+ * The snapshot taken at reveal has to survive the round trip through JSONB and
+ * back out of a cold read — that is the whole point of writing it down. And it
+ * has to survive the facilitator changing the participant list underneath it,
+ * which on the local driver is a memory mutation and here is a real UPDATE.
+ */
+const frozen = (await get(`/api/sessions/${code}`)).data.board.map((b) => ({
+  roleId: b.roleId,
+  train: b.trainCount,
+  fire: b.fireCount,
+  placement: b.placement,
+  revealedAt: b.revealedAt,
+}));
+check(
+  "every revealed role carries the timestamp it was frozen at",
+  frozen.length === 4 && frozen.every((b) => typeof b.revealedAt === "number" && b.revealedAt > 0),
+  frozen.map((b) => `${b.roleId}:${b.revealedAt ? "ok" : "missing"}`).join(" "),
+);
+
+await post(`/api/sessions/${code}/control`, { command: { type: "simulate", count: 10 } }, hostHdr);
+await post(`/api/sessions/${code}/control`, { command: { type: "clearSimulated" } }, hostHdr);
+
+const afterChurn = await fetch(`${BASE}/api/sessions/${code}`, {
+  headers: { "cache-control": "no-cache" },
+}).then((r) => r.json());
+const afterChurnShape = afterChurn.board.map((b) => ({
+  roleId: b.roleId,
+  train: b.trainCount,
+  fire: b.fireCount,
+  placement: b.placement,
+  revealedAt: b.revealedAt,
+}));
+check(
+  "a persisted result is identical after the participant list changes underneath it",
+  JSON.stringify(afterChurnShape) === JSON.stringify(frozen),
+  afterChurn.board.map((b) => `${b.roleId} ${b.trainCount}/${b.fireCount}`).join(" · "),
+);
+check(
+  "no persisted role reads as a 0% verdict",
+  afterChurn.board.every((b) => b.hasVotes && b.total > 0),
+  afterChurn.board.map((b) => `${b.roleId}:${b.total}`).join(" "),
 );
 
 /* ---- security ------------------------------------------------------ */

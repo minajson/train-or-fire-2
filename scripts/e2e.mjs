@@ -148,8 +148,8 @@ const stageIndexOf = async (id) => {
   return view.data.progress.findIndex((p) => p.stageId === id);
 };
 
-const engineerStage = await stageIndexOf("decide-engineer");
-check("decide-engineer stage exists", engineerStage >= 0, `${engineerStage}`);
+const mdStage = await stageIndexOf("decide-md");
+check("decide-md stage exists", mdStage >= 0, `${mdStage}`);
 
 // Beats walk before stages do.
 await post(
@@ -183,19 +183,19 @@ check(
 
 await post(
   `/api/sessions/${code}/control`,
-  { command: { type: "goto", stageIndex: engineerStage } },
+  { command: { type: "goto", stageIndex: mdStage } },
   hostHdr,
 );
 
-const engineerQ = "role-engineer";
-const TRAIN = `${engineerQ}:train`;
-const FIRE = `${engineerQ}:fire`;
+const mdQ = "role-md";
+const TRAIN = `${mdQ}:train`;
+const FIRE = `${mdQ}:fire`;
 
 // A deliberate, known split so the tally can be checked exactly.
 const fireVoters = 11;
 for (let i = 0; i < people.length; i += 1) {
   const optionId = i < fireVoters ? FIRE : TRAIN;
-  await post(`/api/sessions/${code}/vote`, { questionId: engineerQ, optionId }, people[i].hdr);
+  await post(`/api/sessions/${code}/vote`, { questionId: mdQ, optionId }, people[i].hdr);
 }
 
 const voted = await get(`/api/sessions/${code}`);
@@ -208,7 +208,7 @@ check("results stay hidden while voting is open", voted.data.results === null);
 check("the board stays empty before reveal", (voted.data.board ?? []).length === 0);
 
 // Changing your mind is allowed while voting is open.
-await post(`/api/sessions/${code}/vote`, { questionId: engineerQ, optionId: TRAIN }, people[0].hdr);
+await post(`/api/sessions/${code}/vote`, { questionId: mdQ, optionId: TRAIN }, people[0].hdr);
 const changed = await get(`/api/sessions/${code}`);
 check(
   "changing a vote does not add a second one",
@@ -217,14 +217,14 @@ check(
 );
 
 const anonVote = await post(`/api/sessions/${code}/vote`, {
-  questionId: engineerQ,
+  questionId: mdQ,
   optionId: TRAIN,
 });
 check("voting without credentials is refused", anonVote.status === 401, `${anonVote.status}`);
 
 const badOption = await post(
   `/api/sessions/${code}/vote`,
-  { questionId: engineerQ, optionId: "role-engineer:maybe" },
+  { questionId: mdQ, optionId: "role-md:maybe" },
   people[1].hdr,
 );
 check("an unknown option is refused", badOption.status === 422, `${badOption.status}`);
@@ -245,7 +245,7 @@ check(
 await post(`/api/sessions/${code}/control`, { command: { type: "lock" } }, hostHdr);
 const lockedVote = await post(
   `/api/sessions/${code}/vote`,
-  { questionId: engineerQ, optionId: FIRE },
+  { questionId: mdQ, optionId: FIRE },
   people[2].hdr,
 );
 check("voting is refused once locked", lockedVote.status === 409, `${lockedVote.status}`);
@@ -276,7 +276,7 @@ const board = revealed.data.board;
 check("the role takes its place on the board", board.length === 1, `${board.length}`);
 check(
   "the board records the majority side and the minority count",
-  board[0].roleId === "engineer" &&
+  board[0].roleId === "md" &&
     board[0].verdict === "train" &&
     board[0].minorityCount === expectedFire,
   `${board[0]?.verdict} · minority ${board[0]?.minorityCount}`,
@@ -312,7 +312,7 @@ check(
 
 await post(
   `/api/sessions/${code}/control`,
-  { command: { type: "goto", stageIndex: engineerStage } },
+  { command: { type: "goto", stageIndex: mdStage } },
   hostHdr,
 );
 const returned = await get(`/api/sessions/${code}`);
@@ -333,7 +333,7 @@ check(
  */
 await post(
   `/api/sessions/${code}/control`,
-  { command: { type: "goto", stageIndex: engineerStage } },
+  { command: { type: "goto", stageIndex: mdStage } },
   hostHdr,
 );
 await post(`/api/sessions/${code}/control`, { command: { type: "unlock" } }, hostHdr);
@@ -345,7 +345,7 @@ check(
   "Next on an open decision reveals instead of advancing",
   beforeSmartNext.phase === "voting" &&
     afterFirstNext.phase === "revealed" &&
-    afterFirstNext.stageIndex === engineerStage,
+    afterFirstNext.stageIndex === mdStage,
   `phase ${beforeSmartNext.phase} -> ${afterFirstNext.phase}, stage ${afterFirstNext.stageIndex}`,
 );
 
@@ -353,8 +353,8 @@ await post(`/api/sessions/${code}/control`, { command: { type: "next" } }, hostH
 const afterSecondNext = (await get(`/api/sessions/${code}`)).data;
 check(
   "the next press then moves on, with the result kept",
-  afterSecondNext.stageIndex === engineerStage + 1 &&
-    (await get(`/api/sessions/${code}`)).data.board.some((b) => b.roleId === "engineer"),
+  afterSecondNext.stageIndex === mdStage + 1 &&
+    (await get(`/api/sessions/${code}`)).data.board.some((b) => b.roleId === "md"),
   `stage ${afterSecondNext.stageIndex}`,
 );
 
@@ -362,8 +362,292 @@ await post(`/api/sessions/${code}/control`, { command: { type: "back" } }, hostH
 const afterBackToRevealed = (await get(`/api/sessions/${code}`)).data;
 check(
   "Back does not reopen voting on a revealed decision",
-  afterBackToRevealed.stageIndex === engineerStage && afterBackToRevealed.phase === "revealed",
+  afterBackToRevealed.stageIndex === mdStage && afterBackToRevealed.phase === "revealed",
   `stage ${afterBackToRevealed.stageIndex} phase ${afterBackToRevealed.phase}`,
+);
+
+/* ---- results never fall back to 0% ------------------------------- */
+
+/*
+ * The behaviour this whole release is about.
+ *
+ * A result that has been on the wall must survive everything the facilitator
+ * can do to the session short of explicitly reopening it. It is not enough
+ * that the tally is recomputable — the recomputation has to be impossible to
+ * make wrong, which is why reveal writes a snapshot and every reader uses it.
+ *
+ * Each of the four roles is voted with a DIFFERENT, known split, so a result
+ * that leaks from one role into another shows up as a wrong number rather than
+ * as a passing test.
+ */
+
+const ROLE_QUESTIONS = ["role-md", "role-finance", "role-operations", "role-maintenance"];
+const ROLE_STAGES = ["decide-md", "decide-finance", "decide-operations", "decide-maintenance"];
+// Deliberately distinct, and deliberately not 50/50 — a tie is checked on its own below.
+const FIRE_SPLIT = [9, 21, 25, 30];
+
+await post(`/api/sessions/${code}/control`, { command: { type: "restart" } }, hostHdr);
+
+const stageIndexes = [];
+for (const id of ROLE_STAGES) stageIndexes.push(await stageIndexOf(id));
+
+const expected = [];
+for (let q = 0; q < ROLE_QUESTIONS.length; q += 1) {
+  const questionId = ROLE_QUESTIONS[q];
+  await post(
+    `/api/sessions/${code}/control`,
+    { command: { type: "goto", stageIndex: stageIndexes[q] } },
+    hostHdr,
+  );
+  const fire = FIRE_SPLIT[q];
+  for (let i = 0; i < people.length; i += 1) {
+    await post(
+      `/api/sessions/${code}/vote`,
+      { questionId, optionId: `${questionId}:${i < fire ? "fire" : "train"}` },
+      people[i].hdr,
+    );
+  }
+  await post(`/api/sessions/${code}/control`, { command: { type: "reveal" } }, hostHdr);
+
+  const st = (await get(`/api/sessions/${code}`)).data;
+  const entry = st.board.find((b) => b.questionId === questionId || b.roleId === questionId.slice(5));
+  expected.push({
+    questionId,
+    stageIndex: stageIndexes[q],
+    fire,
+    train: people.length - fire,
+    trainPct: entry?.trainPct,
+    firePct: entry?.firePct,
+    placement: entry?.placement,
+  });
+}
+
+check(
+  "each role records its own distinct split",
+  expected.every((e) => e.trainPct !== undefined) &&
+    new Set(expected.map((e) => Math.round(e.trainPct))).size === expected.length,
+  expected.map((e) => `${Math.round(e.trainPct)}%`).join(" · "),
+);
+
+const boardMatches = (board, label) => {
+  for (const e of expected) {
+    const entry = board.find((b) => b.roleId === e.questionId.slice(5));
+    if (!entry) return `${label}: ${e.questionId} missing from the board`;
+    if (entry.trainCount !== e.train || entry.fireCount !== e.fire) {
+      return `${label}: ${e.questionId} is ${entry.trainCount}/${entry.fireCount}, expected ${e.train}/${e.fire}`;
+    }
+    if (Math.round(entry.trainPct) !== Math.round(e.trainPct)) {
+      return `${label}: ${e.questionId} is ${Math.round(entry.trainPct)}%, expected ${Math.round(e.trainPct)}%`;
+    }
+    if (entry.placement !== e.placement) {
+      return `${label}: ${e.questionId} placed ${entry.placement}, expected ${e.placement}`;
+    }
+  }
+  return null;
+};
+
+// A. vote  B. reveal  C. next  D. back  E. identical — for every role.
+let backForwardProblem = null;
+for (const e of expected) {
+  await post(
+    `/api/sessions/${code}/control`,
+    { command: { type: "goto", stageIndex: e.stageIndex } },
+    hostHdr,
+  );
+  await post(`/api/sessions/${code}/control`, { command: { type: "next" } }, hostHdr);
+  const forward = (await get(`/api/sessions/${code}`)).data;
+  backForwardProblem ??= boardMatches(forward.board, `after Next off ${e.questionId}`);
+
+  await post(`/api/sessions/${code}/control`, { command: { type: "back" } }, hostHdr);
+  const backAt = (await get(`/api/sessions/${code}`)).data;
+
+  if (backAt.stageIndex !== e.stageIndex) {
+    backForwardProblem ??= `Back from ${e.questionId} landed on stage ${backAt.stageIndex}`;
+  }
+  if (backAt.phase !== "revealed") {
+    backForwardProblem ??= `Back to ${e.questionId} left phase ${backAt.phase}`;
+  }
+  const train = backAt.results?.options.find((o) => o.optionId === `${e.questionId}:train`);
+  const fire = backAt.results?.options.find((o) => o.optionId === `${e.questionId}:fire`);
+  if (train?.count !== e.train || fire?.count !== e.fire) {
+    backForwardProblem ??= `Back to ${e.questionId} shows ${train?.count}/${fire?.count}, expected ${e.train}/${e.fire}`;
+  }
+  backForwardProblem ??= boardMatches(backAt.board, `after Back to ${e.questionId}`);
+}
+
+check(
+  "Back and Next preserve every role's exact percentages",
+  backForwardProblem === null,
+  backForwardProblem ?? `${expected.length} roles checked`,
+);
+
+// The verdict screen, then away from it and back again.
+const verdictStage = await stageIndexOf("verdict");
+await post(
+  `/api/sessions/${code}/control`,
+  { command: { type: "goto", stageIndex: verdictStage } },
+  hostHdr,
+);
+const onVerdict = (await get(`/api/sessions/${code}`)).data;
+check(
+  "the verdict board carries all four stored results",
+  onVerdict.board.length === 4 && boardMatches(onVerdict.board, "verdict") === null,
+  boardMatches(onVerdict.board, "verdict") ?? `${onVerdict.board.length} on the board`,
+);
+check(
+  "no role on the verdict board is a 0% placeholder",
+  onVerdict.board.every((b) => b.hasVotes && b.total > 0 && b.trainPct + b.firePct > 99),
+  onVerdict.board.map((b) => `${b.roleId} ${Math.round(b.trainPct)}/${Math.round(b.firePct)}`).join(" · "),
+);
+
+await post(`/api/sessions/${code}/control`, { command: { type: "back" } }, hostHdr);
+await post(`/api/sessions/${code}/control`, { command: { type: "next" } }, hostHdr);
+const backToVerdict = (await get(`/api/sessions/${code}`)).data;
+check(
+  "leaving the verdict board and returning changes nothing on it",
+  JSON.stringify(backToVerdict.board) === JSON.stringify(onVerdict.board),
+);
+
+// A fresh read, the way a reloaded projector gets its state.
+const reloaded = await get(`/api/sessions/${code}`);
+check(
+  "a fresh load returns identical stored results",
+  JSON.stringify(reloaded.data.board) === JSON.stringify(onVerdict.board),
+);
+
+/*
+ * The result must not track the responses that produced it.
+ *
+ * Clearing the rehearsal crowd removes their votes. Before reveal wrote a
+ * snapshot, that silently rewrote every revealed percentage on the board —
+ * which is one of the real routes by which a facilitator's board fell to 0%
+ * mid-session, with no way to get it back.
+ */
+await post(`/api/sessions/${code}/control`, { command: { type: "simulate", count: 12 } }, hostHdr);
+await post(`/api/sessions/${code}/control`, { command: { type: "clearSimulated" } }, hostHdr);
+const afterCrowdChange = (await get(`/api/sessions/${code}`)).data;
+check(
+  "a revealed result survives the rehearsal crowd being cleared",
+  boardMatches(afterCrowdChange.board, "after clearSimulated") === null,
+  boardMatches(afterCrowdChange.board, "after clearSimulated") ?? "unchanged",
+);
+
+/* ---- no votes is said in words, not as 0% ------------------------- */
+
+const opsStage = await stageIndexOf("decide-operations");
+await post(
+  `/api/sessions/${code}/control`,
+  { command: { type: "goto", stageIndex: opsStage } },
+  hostHdr,
+);
+await post(
+  `/api/sessions/${code}/control`,
+  { command: { type: "resetStage", questionId: "role-operations" } },
+  hostHdr,
+);
+const clearedOps = (await get(`/api/sessions/${code}`)).data;
+check(
+  "clearing a stage takes it back off the board rather than zeroing it",
+  clearedOps.phase === "voting" &&
+    clearedOps.results === null &&
+    !clearedOps.board.some((b) => b.roleId === "operations"),
+  `${clearedOps.board.length} on the board`,
+);
+
+// Reveal it with nobody having voted: the state must say "no votes", never 0/0.
+await post(`/api/sessions/${code}/control`, { command: { type: "reveal" } }, hostHdr);
+const emptyReveal = (await get(`/api/sessions/${code}`)).data;
+const emptyEntry = emptyReveal.board.find((b) => b.roleId === "operations");
+check(
+  "a decision revealed with no votes is marked pending, not a verdict",
+  emptyReveal.results?.hasVotes === false &&
+    emptyEntry?.placement === "pending" &&
+    emptyEntry?.hasVotes === false &&
+    emptyEntry?.verdict === null,
+  `hasVotes ${emptyReveal.results?.hasVotes}, placement ${emptyEntry?.placement}, verdict ${emptyEntry?.verdict}`,
+);
+check(
+  "a pending role never lands in the TRAIN or FIRE column",
+  !emptyReveal.board.some((b) => b.roleId === "operations" && (b.placement === "train" || b.placement === "fire")),
+);
+check(
+  "the other three roles are untouched by an empty reveal beside them",
+  ["md", "finance", "maintenance"].every((id) => {
+    const e = expected.find((x) => x.questionId === `role-${id}`);
+    const b = emptyReveal.board.find((x) => x.roleId === id);
+    return b && b.trainCount === e.train && b.fireCount === e.fire;
+  }),
+);
+
+/* ---- an exact tie resolves to a split, not to a side -------------- */
+
+await post(
+  `/api/sessions/${code}/control`,
+  { command: { type: "resetStage", questionId: "role-operations" } },
+  hostHdr,
+);
+const half = Math.floor(people.length / 2);
+for (let i = 0; i < half * 2; i += 1) {
+  await post(
+    `/api/sessions/${code}/vote`,
+    {
+      questionId: "role-operations",
+      optionId: `role-operations:${i < half ? "train" : "fire"}`,
+    },
+    people[i].hdr,
+  );
+}
+await post(`/api/sessions/${code}/control`, { command: { type: "reveal" } }, hostHdr);
+const tied = (await get(`/api/sessions/${code}`)).data;
+const tieEntry = tied.board.find((b) => b.roleId === "operations");
+check(
+  "an exact tie is a split decision, not a tiebreak onto TRAIN",
+  tieEntry?.tie === true &&
+    tieEntry?.placement === "split" &&
+    tieEntry?.verdict === null &&
+    tieEntry.trainCount === tieEntry.fireCount,
+  `${tieEntry?.placement} · ${tieEntry?.trainCount}/${tieEntry?.fireCount}`,
+);
+
+/* ---- reopening voting is the ONE thing that clears a result ------- */
+
+await post(`/api/sessions/${code}/control`, { command: { type: "unlock" } }, hostHdr);
+const reopened = (await get(`/api/sessions/${code}`)).data;
+check(
+  "unlocking reopens voting and withdraws the result from every screen",
+  reopened.phase === "voting" &&
+    reopened.results === null &&
+    !reopened.board.some((b) => b.roleId === "operations"),
+);
+
+await post(`/api/sessions/${code}/control`, { command: { type: "reveal" } }, hostHdr);
+const rerevealed = (await get(`/api/sessions/${code}`)).data;
+check(
+  "revealing again re-counts the votes that are actually there",
+  rerevealed.board.find((b) => b.roleId === "operations")?.total === half * 2,
+  `${rerevealed.board.find((b) => b.roleId === "operations")?.total}`,
+);
+
+/* ---- the Managing Director replaced the Maintenance Engineer ------ */
+
+const allStages = (await get(`/api/sessions/${code}/control`, hostHdr)).data.progress;
+check(
+  "no stage, question or board entry mentions the old engineer role",
+  !allStages.some((row) => row.stageId.includes("engineer") || (row.questionId ?? "").includes("engineer")) &&
+    !JSON.stringify(rerevealed.board).includes("engineer"),
+);
+check(
+  "the Managing Director is role 01 and votes independently",
+  allStages.some((row) => row.stageId === "decide-md" && row.questionId === "role-md") &&
+    rerevealed.board.find((b) => b.roleId === "md")?.total === people.length,
+  `${rerevealed.board.find((b) => b.roleId === "md")?.total} decided`,
+);
+
+// Put the room back where the checks below expect it.
+await post(
+  `/api/sessions/${code}/control`,
+  { command: { type: "goto", stageIndex: mdStage } },
+  hostHdr,
 );
 
 /* ---- the join-code rule is stated in state, not per screen -------- */
@@ -416,7 +700,7 @@ check(
 // checks below are written against.
 await post(
   `/api/sessions/${code}/control`,
-  { command: { type: "goto", stageIndex: engineerStage } },
+  { command: { type: "goto", stageIndex: mdStage } },
   hostHdr,
 );
 
@@ -449,7 +733,7 @@ const lateHdr = {
 const lateView = await get(`/api/sessions/${code}?participantId=${late.data.participantId}`);
 check(
   "a late arrival sees the current stage, not the start",
-  lateView.data.stageIndex === engineerStage,
+  lateView.data.stageIndex === mdStage,
   `${lateView.data.stageIndex}`,
 );
 
@@ -475,14 +759,16 @@ check(
 
 /* ---- reset -------------------------------------------------------- */
 
+const beforeReset = (await get(`/api/sessions/${code}`)).data;
 await post(`/api/sessions/${code}/control`, { command: { type: "resetStage" } }, hostHdr);
 const reset = await get(`/api/sessions/${code}`);
 check(
-  "clearing a stage removes its votes and its board entry",
+  "clearing a stage removes its votes and its board entry, and only its own",
   reset.data.counts.responses === 0 &&
     reset.data.phase === "voting" &&
-    reset.data.board.length === 1,
-  `${reset.data.counts.responses} votes, ${reset.data.board.length} on board`,
+    !reset.data.board.some((b) => b.roleId === "md") &&
+    reset.data.board.length === beforeReset.board.length - 1,
+  `${reset.data.counts.responses} votes, ${reset.data.board.length} on board (was ${beforeReset.board.length})`,
 );
 
 /* ---- full walkthrough, forwards and back ------------------------- */

@@ -37,6 +37,33 @@ export interface ResponseRecord {
   updatedAt: number;
 }
 
+/**
+ * What the room actually decided on one question, frozen at the instant the
+ * facilitator revealed it.
+ *
+ * This is the fix for the worst failure this app can have in front of a room:
+ * a result that was on the wall a minute ago coming back as 0%. Percentages
+ * were previously derived from `responses` on every read, which is correct
+ * while nothing removes a response — but "restart", "clear simulated" and a
+ * cleared stage all can, and a revealed number that quietly recomputes itself
+ * is a number the facilitator cannot trust in front of an audience.
+ *
+ * So reveal writes down what it revealed. Counts, not percentages: the shape
+ * survives a schema change and the arithmetic stays in one place. Nothing but
+ * an explicit reopen (unlock / reset / restart) ever removes one.
+ */
+export interface ResultSnapshot {
+  questionId: string;
+  revealedAt: number;
+  /** optionId → votes, at reveal. Options with no votes are present as 0. */
+  counts: Record<string, number>;
+  roomCounts: Record<string, number>;
+  onlineCounts: Record<string, number>;
+  totalResponses: number;
+  roomResponses: number;
+  onlineResponses: number;
+}
+
 export interface SessionSettings {
   /** Corner QR on voting stages, and the big QR on the join stage. */
   showQr: boolean;
@@ -61,6 +88,12 @@ export interface SessionRecord {
   overlay: Overlay;
   /** questionId → phase. Missing means "voting". */
   phases: Record<string, Phase>;
+  /**
+   * questionId → the result as it was when revealed. Written by reveal, and
+   * removed only by unlock, resetStage or restart. Sessions created before
+   * this field existed simply have none, and fall back to a live tally.
+   */
+  snapshots?: Record<string, ResultSnapshot>;
   settings: SessionSettings;
   /** Bumped on every persisted mutation; clients use it to drop stale frames. */
   revision: number;
@@ -103,20 +136,49 @@ export interface QuestionResults {
   leadingOptionId: string | null;
   /** True when two or more options share the lead. */
   tie: boolean;
+  /**
+   * False when nobody answered. Every surface reads this instead of inferring
+   * emptiness from `0%` — "TRAIN 0% / FIRE 0%" and "nobody voted" are
+   * different statements, and only one of them is ever true.
+   */
+  hasVotes: boolean;
+  /** When this result was frozen, if it came from a snapshot. */
+  revealedAt: number | null;
 }
 
 /**
- * One role's place on the TRAIN/FIRE board. Produced only for roles whose
- * question has been revealed, so the board builds up across the activity
- * rather than being reset or pre-filled.
+ * Where a role stands on the TRAIN/FIRE board.
+ *
+ *  `train` / `fire` — a real majority, from real votes.
+ *  `split`         — an exact tie. The role sits between the zones rather than
+ *                    being assigned to one by a tiebreak nobody voted for.
+ *  `pending`       — revealed with nobody having voted. The board says so in
+ *                    words; it never renders this as 0%.
+ */
+export type Placement = "train" | "fire" | "split" | "pending";
+
+/**
+ * One role's place on the TRAIN/FIRE board.
+ *
+ * Built from the reveal snapshot when there is one, so a role that has been on
+ * the wall keeps exactly the numbers it was shown with — through Back, Next, a
+ * reload, a redeploy, and a facilitator clearing the simulated crowd.
+ *
+ * A role appears only once its own question has been revealed, so the board
+ * builds up across the activity rather than being reset or pre-filled.
  */
 export interface BoardEntry {
   roleId: RoleId;
   title: string;
   quote: string;
-  /** Majority side. On an exact tie this is "train" and `tie` is true. */
-  verdict: Verdict;
+  /** Short evidence, carried with the result so a revisit is never a naked %. */
+  facts: string[];
+  placement: Placement;
+  /** Majority side. Null on a split or a pending role — never guessed. */
+  verdict: Verdict | null;
   tie: boolean;
+  /** False when the question was revealed with no votes. */
+  hasVotes: boolean;
   trainCount: number;
   fireCount: number;
   trainPct: number;
@@ -125,6 +187,15 @@ export interface BoardEntry {
   /** How many people chose the other side. Drives "N saw this differently". */
   minorityCount: number;
   minorityPct: number;
+  /** Order the room decided them in, 1-based. Drives the verdict wall entrance. */
+  order: number;
+  /**
+   * When this result was frozen. Null only for a session that predates
+   * snapshots. Screens compare it against `serverTime` to tell a reveal
+   * happening NOW from a result coming back on screen, and animate only the
+   * first — see `useCountUp`.
+   */
+  revealedAt: number | null;
 }
 
 export interface PublicSessionState {

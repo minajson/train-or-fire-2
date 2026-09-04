@@ -14,7 +14,7 @@ import type {
   StageProgress,
 } from "@/lib/types";
 import { buildBoard } from "./board";
-import { responseCount, tallyQuestion } from "./tally";
+import { responseCount, revealedResults, tallyQuestion } from "./tally";
 
 export function phaseOf(session: SessionRecord, questionId: string | null): Phase {
   if (!questionId) return "revealed";
@@ -78,7 +78,7 @@ export function buildPublicState(
      * projector can show "24 / 31 decided" because that comes from `counts`,
      * which carries no information about which way anyone voted.
      */
-    results: question && phase === "revealed" ? tallyQuestion(session, question) : null,
+    results: question && phase === "revealed" ? revealedResults(session, question) : null,
     board: buildBoard(session),
     you: buildOwnVote(session, question?.id, opts.participantId),
     serverTime: Date.now(),
