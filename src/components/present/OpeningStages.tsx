@@ -2,7 +2,11 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { QrCode } from "@/components/ui/QrCode";
-import { INCIDENT_LINES, INCIDENT_MACHINE_STEP } from "@/lib/content/activity";
+import {
+  INCIDENT_LINES,
+  INCIDENT_MACHINE_STEP,
+  MACHINE_STEPS,
+} from "@/lib/content/activity";
 import { ENTER, Rise, useMotionOff } from "@/lib/motion/primitives";
 import type { PublicSessionState } from "@/lib/types";
 import { joinUrl, PresenceLine } from "./JoinPanel";
@@ -226,12 +230,20 @@ export function IncidentStage({ beat }: { beat: number }) {
             className="mt-[2.5cqh] flex min-h-0 flex-1"
           >
             {/*
-             * `playKey` is the stage's own identity rather than the beat: the
-             * clip restarts when the facilitator comes back to this screen,
-             * which is how they replay it, and does not restart for anything
-             * else.
+             * The fallback is drawn at the FAILURE, not at normal operation.
+             *
+             * This beat is the failure — that is what the clip shows and what
+             * the room is here for. A deployment without the file should open
+             * on the same fact, and the schematic saying "Normal operation"
+             * immediately before the line "a critical production machine has
+             * failed" is the same contradiction the narrative mapping exists
+             * to remove.
              */}
-            <MachineFootage step={0} playKey={0} className="w-full" />
+            <MachineFootage
+              step={MACHINE_STEPS.length - 1}
+              playKey={0}
+              className="w-full"
+            />
           </motion.div>
         ) : (
           <motion.div
