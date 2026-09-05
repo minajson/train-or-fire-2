@@ -248,6 +248,23 @@ export const MACHINE_STEPS: MachineStep[] = [
 ];
 
 /**
+ * Which machine condition sits beside each line of the narrative.
+ *
+ * Not a monotonic walk, because the narrative is not one. The incident opens
+ * in the present — "a critical production machine HAS FAILED" — then goes back
+ * several weeks and returns. Marching the schematic from normal to failure
+ * across those seven lines put "Normal operation" on the wall beside the
+ * sentence saying the machine had already failed, which is the kind of
+ * contradiction the maintenance people in the room notice first.
+ *
+ * So the drawing follows the story instead: it opens tripped, rewinds to the
+ * first abnormal readings, walks the deterioration — including the temporary
+ * stabilisation, which is why "senior leadership was aware" sits against a
+ * machine that had just started looking better — and ends back where it began.
+ */
+export const INCIDENT_MACHINE_STEP: number[] = [6, 1, 2, 3, 4, 5, 6];
+
+/**
  * Optional footage of the failure, dropped in at this path.
  *
  * The app never depends on it. When the file is absent — which is the state
@@ -578,9 +595,18 @@ export const STAGES: Stage[] = [
     panel: "quiet",
     label: "The incident",
     chapter: "Open",
-    beats: INCIDENT_LINES.length,
+    /*
+     * One beat for the machine, then one per line.
+     *
+     * The first beat is the failure itself — the footage, full stage, with
+     * nothing to read. It has to be its own beat: a room cannot watch a
+     * fifteen-second clip and take in a sentence at the same time, and asking
+     * them to do both means they do neither. The narrative starts on Next,
+     * against the still frame the clip ends on.
+     */
+    beats: INCIDENT_LINES.length + 1,
     note: {
-      ask: "Read each line out as it appears. Then stop.",
+      ask: "Let the failure play. Say nothing over it. Then read each line out as it appears.",
       learning: "Everyone judges the same facts. No extra narrative, no hints.",
       talkingPoint:
         "Notice what we have not told you: no names, no site, no numbers. You have exactly the information a manager usually has on the morning after — and that is the point.",

@@ -1,7 +1,9 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
+import { useEffect, useState, type ReactNode } from "react";
 import { VerdictMark } from "@/components/ui/VerdictMark";
+import { hasShownReveal, markRevealShown, revealKey } from "@/lib/client/reveal-seen";
 import { cn } from "@/lib/cn";
 import { ROLES, type Role, type Verdict } from "@/lib/content/activity";
 import { CountPct, ENTER, useMotionOff } from "@/lib/motion/primitives";
@@ -88,6 +90,7 @@ function VerdictZone({
   verdict,
   livePct,
   placed,
+  subject,
   highlight = false,
   countUp = true,
 }: {
@@ -96,6 +99,16 @@ function VerdictZone({
   livePct: number | null;
   /** Roles already settled here, in the order the room decided them. */
   placed: BoardEntry[];
+  /**
+   * The role this screen is about, once the room has sent it here.
+   *
+   * A structural slot rather than an overlay. Floating the token over the zone
+   * put it on top of the percentage on a 768px-tall projector — the two things
+   * the audience most needs to read, in the same place. Giving it a row of its
+   * own means the zone reads down in the order the room thinks: the side, the
+   * share, who it applies to, and then everyone else already standing here.
+   */
+  subject?: ReactNode;
   highlight?: boolean;
   /** False when this result is being re-shown rather than revealed. */
   countUp?: boolean;
@@ -147,6 +160,8 @@ function VerdictZone({
        * activity runs. On the verdict screen the zones hold nothing else, so
        * the same list takes the centre and the room's judgement is the subject.
        */}
+      {subject ? <div className="relative mt-[2cqh] shrink-0">{subject}</div> : null}
+
       <div className="relative mt-[2.5cqh] flex min-h-0 flex-1 flex-col justify-end">
         <ul className="flex flex-col gap-[1.8cqh]">
           <AnimatePresence initial={false}>
@@ -175,8 +190,82 @@ function VerdictZone({
 }
 
 /* ------------------------------------------------------------------ */
-/* The decision stage                                                  */
+/* The decision, as one object                                         */
 /* ------------------------------------------------------------------ */
+
+/**
+ * Everything the decision screen renders, resolved in one place.
+ *
+ * This exists because of a real failure: the screen used to decide, in several
+ * separate places at render time, whether to show a title, whether to show
+ * evidence, and whether to show percentages — each from a slightly different
+ * input. A revisited role could therefore come back as evidence and numbers
+ * with no name above them, which is the one thing a projected decision must
+ * never be. A percentage without a role is not a result; it is a number the
+ * room cannot argue with.
+ *
+ * So there is one function, it is pure, and every part of the screen reads its
+ * output. Two sources feed it and nothing else:
+ *
+ *   IDENTITY — role, marker, facts, quote — comes from the activity script,
+ *   via the stage's own `roleId`. It is a constant. It cannot be missing, it
+ *   cannot arrive late, and it does not depend on the phase, the beat, the
+ *   board, an animation, or anything the client is holding.
+ *
+ *   RESULT — the split, the placement — comes from the frozen snapshot on the
+ *   board entry, and only ever when the question is revealed.
+ *
+ * Identity is therefore never conditional on the result being there. That
+ * asymmetry is the whole fix.
+ */
+export interface DecisionView {
+  index: number;
+  count: number;
+  marker: string;
+  title: string;
+  facts: string[];
+  quote: string;
+  revealed: boolean;
+  /** True once revealed with at least one vote behind it. */
+  hasResult: boolean;
+  /** Null unless there is a real result. Never 0 standing in for "none". */
+  trainPct: number | null;
+  firePct: number | null;
+  total: number;
+  placement: TokenPlacement;
+  /** Identifies this reveal for the "have we shown it yet" register. */
+  revealKey: string | null;
+  /** When the result was frozen. Null until there is one. */
+  revealedAt: number | null;
+  minorityLine: string | null;
+}
+
+export function decisionView(state: PublicSessionState, role: Role): DecisionView {
+  const revealed = state.phase === "revealed";
+  const entry = state.board.find((b) => b.roleId === role.id) ?? null;
+  // A board entry only exists once the question is revealed, but be explicit:
+  // a result is never read unless the phase says the room has been shown one.
+  const result = revealed ? entry : null;
+  const hasResult = Boolean(result?.hasVotes);
+
+  return {
+    index: ROLES.findIndex((r) => r.id === role.id) + 1,
+    count: ROLES.length,
+    marker: role.marker,
+    title: role.title,
+    facts: role.phoneFacts,
+    quote: role.quote,
+    revealed,
+    hasResult,
+    trainPct: hasResult ? (result?.trainPct ?? null) : null,
+    firePct: hasResult ? (result?.firePct ?? null) : null,
+    total: result?.total ?? 0,
+    placement: hasResult ? placementOf(result) : null,
+    revealKey: result ? revealKey(role.id, result.revealedAt) : null,
+    revealedAt: result?.revealedAt ?? null,
+    minorityLine: result && result.hasVotes ? minorityLine(result) : null,
+  };
+}
 
 function minorityLine(entry: BoardEntry): string | null {
   if (!entry.hasVotes) return null;
@@ -186,200 +275,194 @@ function minorityLine(entry: BoardEntry): string | null {
   return `${entry.minorityCount} people saw this differently.`;
 }
 
-const placementOf = (entry: BoardEntry | null): TokenPlacement => {
-  if (!entry) return null;
+function placementOf(entry: BoardEntry | null): TokenPlacement {
+  if (!entry || !entry.hasVotes) return null;
   if (entry.placement === "train" || entry.placement === "fire") return entry.placement;
   if (entry.placement === "split") return "split";
   return null;
-};
+}
+
+/* ------------------------------------------------------------------ */
+/* Reveal, once                                                        */
+/* ------------------------------------------------------------------ */
 
 /**
- * The evidence, kept on screen for the whole decision.
+ * True only on the showing of a reveal this page has not shown before.
  *
- * This is the second thing the brief asked for and the second thing that was
- * genuinely wrong: revisiting a decided role used to show a bare percentage
- * board, and a room cannot argue with a number when it can no longer see what
- * the number was about. Role, evidence, quote and result now travel together —
- * before the reveal, after it, and on every Back that returns here.
+ * Two conditions, and both are needed. The register says whether this exact
+ * reveal has already been on this projector — which is what makes a Back into
+ * a role decided ten seconds ago correctly silent. The clock covers the one
+ * case the register cannot: a page that has just loaded has shown nothing, so
+ * without it every reload would replay every result it landed on.
  */
-function Evidence({ role, compact }: { role: Role; compact: boolean }) {
+function useFirstShowing(key: string | null, serverTime: number, revealedAt: number | null) {
+  const recent = revealedAt != null && serverTime - revealedAt < FRESH_MS;
+
+  const [tracked, setTracked] = useState<{ key: string | null; fresh: boolean }>({
+    key: null,
+    fresh: false,
+  });
+  // React's sanctioned adjust-during-render: the answer has to be settled
+  // before this frame paints, or the first frame of a reveal renders as a
+  // revisit and the animation never starts.
+  if (tracked.key !== key) {
+    setTracked({ key, fresh: key !== null && recent && !hasShownReveal(key) });
+  }
+
+  useEffect(() => {
+    if (key) markRevealShown(key);
+  }, [key]);
+
+  return tracked.key === key && tracked.fresh;
+}
+
+/** How long after a reveal a fresh page load still treats it as the moment. */
+const FRESH_MS = 8000;
+
+/* ------------------------------------------------------------------ */
+/* The decision stage                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Who we are looking at, and what they did.
+ *
+ * Rendered identically whether the room is voting or the result is on the
+ * wall. Nothing in this block is conditional on the phase — that is the point.
+ * A facilitator pressing Back cannot land on a version of this screen that has
+ * lost the name, because there is no version of this screen without it.
+ *
+ * The title is set at the same size as TRAIN and FIRE. From the back of a room
+ * the question the audience asks on a returning screen is "who is this?", and
+ * it has to be answerable before "what did we decide?".
+ */
+function RoleBrief({ view }: { view: DecisionView }) {
   return (
     <div className="min-w-0">
-      <ul className={cn("space-y-[0.5cqh]", compact && "space-y-[0.2cqh]")}>
-        {role.phoneFacts.map((fact) => (
-          <li
-            key={fact}
-            className={cn(
-              "display-loose text-ink-2",
-              compact ? "text-stage-xs" : "text-stage-sm",
-            )}
-          >
+      <h2 className="display text-stage-lg leading-[0.95]">{view.title}</h2>
+      <ul className="mt-[1.4cqh] space-y-[0.35cqh]">
+        {view.facts.map((fact) => (
+          <li key={fact} className="display-loose text-stage-sm text-ink-2">
             {fact}
           </li>
         ))}
       </ul>
-      <p
-        className={cn(
-          "quote mt-[1.4cqh] text-ink",
-          compact ? "text-stage-sm" : "text-stage-md",
-        )}
-      >
-        &ldquo;{role.quote}&rdquo;
-      </p>
+      <p className="quote mt-[1.2cqh] text-stage-md text-ink">&ldquo;{view.quote}&rdquo;</p>
     </div>
   );
 }
 
 export function DecisionStage({ state, role }: { state: PublicSessionState; role: Role }) {
-  const revealed = state.phase === "revealed";
-  const entry = state.board.find((b) => b.roleId === role.id) ?? null;
-  const index = ROLES.findIndex((r) => r.id === role.id) + 1;
-  const placement = placementOf(entry);
+  const view = decisionView(state, role);
+  const firstShowing = useFirstShowing(view.revealKey, state.serverTime, view.revealedAt);
 
   /*
    * The running record of the room's verdicts — everyone EXCEPT the role on
-   * screen. This role is already in the arena as a token; listing it again
-   * underneath would put the same name on the wall twice, and two copies of a
-   * thing read as clutter long before they read as reinforcement.
+   * screen, whose own token is standing in one of these zones already.
    */
   const trainPlaced = state.board.filter((b) => b.placement === "train" && b.roleId !== role.id);
   const firePlaced = state.board.filter((b) => b.placement === "fire" && b.roleId !== role.id);
 
   // Revealed with nobody having voted. Said in words, never as 0% / 0%.
-  const noVotes = revealed && entry !== null && !entry.hasVotes;
+  const noVotes = view.revealed && !view.hasResult;
 
-  /*
-   * Is this reveal happening now, or is this result coming back on screen?
-   *
-   * Only the first earns a count-up. On a Back into an already-decided role the
-   * figures land on their real values immediately — sweeping them up from zero
-   * again is precisely the "it fell back to 0%" the room reports, even when it
-   * only lasts a second, because a second is long enough for someone to read
-   * the wall and believe it.
-   *
-   * Answered from the snapshot's own timestamp against the server's clock, so
-   * it needs no client state and cannot be confused by a reconnect or a
-   * projector that was opened late.
-   */
-  const justRevealed =
-    entry?.revealedAt != null && state.serverTime - entry.revealedAt < 4000;
-
-  // One shared identity for the token, wherever on the screen it currently is.
   const tokenId = `token-${role.id}`;
+  const token = (
+    <TokenSlot
+      layoutId={tokenId}
+      animate={firstShowing}
+      marker={view.marker}
+      title={view.title}
+      verdict={view.placement === "train" || view.placement === "fire" ? view.placement : null}
+    />
+  );
 
   return (
     <StageFrame className="flex flex-col">
       <div className="flex shrink-0 items-baseline justify-between gap-[2cqw]">
         <span className="stage-eyebrow text-ink-3">
-          Decision {String(index).padStart(2, "0")} / {String(ROLES.length).padStart(2, "0")}
+          Decision {String(view.index).padStart(2, "0")} /{" "}
+          {String(view.count).padStart(2, "0")}
         </span>
-        <AnimatePresence mode="wait">
-          {!revealed ? (
-            <motion.div
-              key="counter"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="flex items-center gap-[1cqw]"
-            >
-              <SignalPulse tone="ink" size={11} active={state.status === "live"} />
-              <span className="stage-eyebrow text-ink-3">Voting live</span>
-              <span className="display text-stage-md text-ink-2 tnum">
-                {state.counts.responses}
-                <span className="text-ink-3"> / {state.counts.total}</span>
-              </span>
-              <span className="stage-eyebrow text-ink-3">Decided</span>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="result-meta"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="stage-eyebrow text-ink-3 tnum"
-            >
-              {entry?.hasVotes ? `${entry.total} decided` : "No votes"}
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {!view.revealed ? (
+          <span className="flex items-center gap-[1cqw]">
+            <SignalPulse tone="ink" size={11} active={state.status === "live"} />
+            <span className="stage-eyebrow text-ink-3">Voting live</span>
+            <span className="display text-stage-md text-ink-2 tnum">
+              {state.counts.responses}
+              <span className="text-ink-3"> / {state.counts.total}</span>
+            </span>
+            <span className="stage-eyebrow text-ink-3">Decided</span>
+          </span>
+        ) : (
+          <span className="stage-eyebrow text-ink-3 tnum">
+            {view.hasResult ? `${view.total} decided` : "No votes"}
+          </span>
+        )}
       </div>
 
       {/*
-       * The role, and the evidence it is being judged on.
-       *
-       * The token is the name — there is exactly one of it on screen at any
-       * moment. Before the reveal it sits here, at the head of its own
-       * evidence. On reveal it LEAVES this block and reappears inside the zone
-       * the room chose, and because both places share a layout id, Framer
-       * flies the same object between them: the role visibly travels out of
-       * the brief and into its verdict.
-       *
-       * The evidence stays put through all of it. Coming back to a decided
-       * role has to show what the room was judging, not a bare percentage —
-       * an audience cannot argue with a number whose subject has left.
+       * Identity and evidence: the same DOM in both phases, so revealing
+       * changes nothing here and returning cannot rebuild it wrongly. The only
+       * thing that arrives on reveal is the sentence about the minority, and
+       * it arrives BESIDE the brief rather than in place of any of it.
        */}
-      <div className="relative mt-[2cqh] flex shrink-0 items-start justify-between gap-[3cqw]">
-        <div className="min-w-0 flex-1">
-          {revealed ? null : (
-            <TokenSlot layoutId={tokenId} marker={role.marker} title={role.title} size="lg" />
-          )}
-          <motion.div layout className={revealed ? "" : "mt-[1.6cqh]"}>
-            <Evidence role={role} compact={revealed} />
-          </motion.div>
-        </div>
+      <div className="relative mt-[2.5cqh] flex shrink-0 items-start justify-between gap-[3cqw]">
+        <RoleBrief view={view} />
 
         <AnimatePresence>
-          {revealed ? (
+          {view.revealed ? (
             <motion.p
-              initial={{ opacity: 0, y: 12 }}
+              key="minority"
+              initial={{ opacity: 0, y: firstShowing ? 12 : 0 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ ...ENTER, delay: 0.5 }}
+              transition={{ ...ENTER, delay: firstShowing ? 0.5 : 0 }}
               className="display-loose shrink-0 text-right text-stage-sm text-ink-3"
             >
-              {noVotes ? "No votes yet" : entry ? minorityLine(entry) : null}
+              {noVotes ? "Nobody voted on this decision." : view.minorityLine}
             </motion.p>
           ) : null}
         </AnimatePresence>
       </div>
 
-      <div className="relative mt-[2cqh] grid min-h-0 flex-1 grid-cols-2 gap-[2cqw]">
+      <div className="relative mt-[2.5cqh] grid min-h-0 flex-1 grid-cols-2 gap-[2cqw]">
         <VerdictZone
           verdict="train"
-          livePct={revealed && entry?.hasVotes ? entry.trainPct : null}
-          countUp={justRevealed}
+          livePct={view.trainPct}
+          countUp={firstShowing}
           placed={trainPlaced}
-          highlight={revealed && entry?.placement === "train"}
+          subject={view.placement === "train" ? token : undefined}
+          highlight={view.placement === "train"}
         />
         <VerdictZone
           verdict="fire"
-          livePct={revealed && entry?.hasVotes ? entry.firePct : null}
-          countUp={justRevealed}
+          livePct={view.firePct}
+          countUp={firstShowing}
           placed={firePlaced}
-          highlight={revealed && entry?.placement === "fire"}
+          subject={view.placement === "fire" ? token : undefined}
+          highlight={view.placement === "fire"}
         />
 
         {/*
-         * The token rides above both zones, so its travel is one continuous
-         * move across the arena rather than a hand-off between two boxes.
+         * Before the room has decided — and on a tie, where it never will — the
+         * token stands in the middle of the arena, belonging to neither side.
+         * Once it has a side it lives inside that zone instead, and because
+         * both places share a layout id the reveal is one continuous move
+         * across the wall rather than a hand-off between two boxes.
+         *
+         * That move happens on the showing of a reveal and never again. On a
+         * revisit the token is simply drawn where it belongs, already settled:
+         * there is no flight to be caught halfway through, and so no frame in
+         * which the arena holds a role that is not yet anywhere.
          */}
-        <TokenArena
-          layoutId={tokenId}
-          marker={role.marker}
-          title={role.title}
-          placement={revealed ? placement : null}
-        />
-
-        {noVotes ? (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ ...ENTER, delay: 0.3 }}
-            className="pointer-events-none absolute inset-x-0 bottom-[3cqh] z-30 flex justify-center"
-          >
-            <span className="stage-eyebrow rounded-full border border-rule bg-surface px-[1.6cqw] py-[0.9cqh] text-ink-2 shadow-lift">
-              No votes yet
-            </span>
-          </motion.div>
-        ) : null}
+        {view.placement === "train" || view.placement === "fire" ? null : (
+          <TokenArena
+            layoutId={tokenId}
+            animate={!view.revealed || firstShowing}
+            marker={view.marker}
+            title={view.title}
+            placement={view.placement}
+          />
+        )}
       </div>
     </StageFrame>
   );

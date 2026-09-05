@@ -58,10 +58,17 @@ export function RoleToken({
           verdict === null && "bg-graphite",
         )}
       />
-      <span className="flex min-w-0 flex-col justify-center px-[1.6cqw] py-[1.4cqh]">
-        {marker ? (
-          <span className="stage-eyebrow text-ink-3 tnum">{marker}</span>
-        ) : null}
+      {/*
+       * Ink, always — never the colour of the zone it is standing in.
+       *
+       * The token inherits its surroundings otherwise, which puts a role's name
+       * in red the moment the room fires them. That reads as an error state
+       * rather than as a decision, and it makes colour carry the verdict twice
+       * over. The spine says which side; the word above it says which side; the
+       * name stays the name.
+       */}
+      <span className="flex min-w-0 flex-col justify-center px-[1.6cqw] py-[1.4cqh] text-ink">
+        {marker ? <span className="stage-eyebrow text-ink-3 tnum">{marker}</span> : null}
         <span className={cn("display-loose min-w-0 truncate", text, marker && "mt-[0.6cqh]")}>
           {title}
         </span>
@@ -84,6 +91,13 @@ export type TokenPlacement = Verdict | "split" | null;
  * was, measures where it now is, and springs between the two. Nothing computes
  * a coordinate, which is why it lands correctly on a 1366×768 projector and a
  * 1920×1080 one without a hard-coded offset anywhere.
+ *
+ * `animate={false}` drops the layout id entirely rather than shortening the
+ * transition. That distinction matters: a layout id is a standing claim that
+ * this element is the same object as the last one Framer saw under that id, so
+ * leaving it in place on a revisit invites a flight from wherever the token
+ * happened to be on the previous screen. Without it, the token is simply drawn
+ * where it belongs, already settled, on the first frame.
  */
 export function TokenSlot({
   layoutId,
@@ -91,14 +105,24 @@ export function TokenSlot({
   title,
   verdict = null,
   size = "md",
+  animate = true,
 }: {
   layoutId: string;
   marker?: string;
   title: string;
   verdict?: Verdict | null;
   size?: "sm" | "md" | "lg";
+  animate?: boolean;
 }) {
   const reduced = useMotionOff();
+
+  if (!animate) {
+    return (
+      <div className="inline-block">
+        <RoleToken marker={marker} title={title} verdict={verdict} size={size} />
+      </div>
+    );
+  }
 
   return (
     <motion.div
@@ -128,14 +152,17 @@ export function TokenSlot({
  * the room genuinely did not decide, and moving it anyway would put a verdict
  * on the wall that nobody voted for.
  *
- * Renders nothing while the decision is open: the token is still up in the
- * brief, and this is the empty arena it is about to cross.
+ * `animate` is false on every showing after the first. The travel belongs to
+ * the moment the answer lands; replaying it on a Back means the arena spends
+ * most of a second holding a role that is not yet anywhere, which is precisely
+ * how a returning decision comes to look incomplete.
  */
 export function TokenArena({
   marker,
   title,
   placement,
   layoutId,
+  animate = true,
   className,
 }: {
   marker?: string;
@@ -143,12 +170,12 @@ export function TokenArena({
   placement: TokenPlacement;
   /** Shared with the token's pre-reveal position, so the two are one object. */
   layoutId: string;
+  /** False when this result is being re-shown rather than revealed. */
+  animate?: boolean;
   className?: string;
 }) {
   const reduced = useMotionOff();
   const placed = placement === "train" || placement === "fire";
-
-  if (placement === null) return null;
 
   const token = (
     <TokenSlot
@@ -157,6 +184,7 @@ export function TokenArena({
       title={title}
       verdict={placed ? placement : null}
       size="md"
+      animate={animate}
     />
   );
 
@@ -170,14 +198,16 @@ export function TokenArena({
       ) : (
         <div className="flex w-full flex-col items-center gap-[1.6cqh]">
           {token}
-          <motion.span
-            initial={reduced ? false : { opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.2 }}
-            className="stage-eyebrow rounded-full border border-rule bg-surface px-[1.4cqw] py-[0.8cqh] text-ink-2 shadow-lift"
-          >
-            Split decision
-          </motion.span>
+          {placement === "split" ? (
+            <motion.span
+              initial={reduced || !animate ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.2 }}
+              className="stage-eyebrow rounded-full border border-rule bg-surface px-[1.4cqw] py-[0.8cqh] text-ink-2 shadow-lift"
+            >
+              Split decision
+            </motion.span>
+          ) : null}
         </div>
       )}
     </div>

@@ -384,32 +384,98 @@ Four rules keep it reading as instrumentation rather than ornament:
    temporary fix and then goes further; and the trip is a **stop**, not an
    explosion, because that is what a protection system doing its job looks like.
 
-### The reveal is one object moving
+### A decision is one object, and identity is not conditional
 
-The role token renders under a shared Framer `layoutId`. Before the reveal it
-sits at the head of its own evidence; after it, the same element is rendered
-inside the zone the room chose, and Framer measures both and springs between
-them. Nothing computes a coordinate, which is why the ~700ms travel lands
-correctly on 1366×768 and 1920×1080 without a hard-coded offset anywhere.
+The decision screen renders from a single pure function, `decisionView`, and two
+independent sources feed it:
 
-A count-up belongs to the **moment** of a reveal, so `CountPct` takes an
-`enabled` flag and the decision stage answers it from the snapshot timestamp
-against `serverTime`. Coming back to an already-decided role lands the figures
-on their real values immediately. Sweeping them up from zero again is the same
-"it fell back to 0%" the room reports — a second is long enough to read the wall
-and believe it.
+- **Identity** — role, marker, facts, quote — comes from the activity script via
+  the stage's own `roleId`. It is a constant. It does not depend on the phase,
+  the beat, the board, an animation, or anything the client is holding.
+- **Result** — the split and the placement — comes from the frozen snapshot, and
+  only once the question is revealed.
+
+Identity is therefore never conditional on the result being present. That
+asymmetry is the whole rule, and it exists because the alternative shipped: the
+revealed view once dropped its title and let the token inside the winning zone
+carry the name, so a returning decision could come back as evidence and
+percentages under no heading at all. A percentage without a role is not a
+result; it is a number the room cannot argue with.
+
+The header — decision number, title, evidence, quote — is now **the same DOM in
+both phases**. Revealing changes nothing in it, so returning cannot rebuild it
+wrongly. The title is set at the same size as TRAIN and FIRE, because on a
+screen the facilitator has just navigated back to, the audience's first question
+is "who is this?" and it has to be answerable before "what did we decide?".
+
+### The reveal animates once, and only once
+
+The token travelling into its zone and the percentages counting up are how a
+room is told *the answer is in*. Replaying them on every Back tells the room the
+answer is coming in again — and for the length of the flight the wall holds a
+role that is not yet anywhere and a number that is not the result. That is what
+a facilitator sees as "the role vanished" or "the percentages fell back".
+
+A clock cannot decide this alone: a facilitator can reveal, press Next and press
+Back inside two seconds, and that is a revisit. So the authority is
+`src/lib/client/reveal-seen.ts`, a module-scoped register of the reveals this
+page has actually displayed, keyed by role plus the instant the result was
+frozen. Module scope is the point — it outlives the stage component, which
+unmounts on every Back and Next, and it dies with the page, because a fresh load
+genuinely has not shown anything yet. A wall-clock window covers only that
+reload case. Re-revealing after an unlock gets a new timestamp and is correctly
+treated as a new event.
+
+When the answer is "revisit", `TokenSlot` drops its `layoutId` entirely rather
+than shortening the transition. A layout id is a standing claim that this is the
+same object Framer last saw under that id; leaving it in place invites a flight
+from wherever the token was on the previous screen. Without it the token is
+simply drawn where it belongs, on the first frame.
+
+The token also lives *inside* its zone rather than floating over the arena. As
+an overlay it landed on top of the percentage on a 768px-tall projector — the
+two things the audience most needs to read, in the same place.
 
 ### The machine failure video
 
-The incident screen has an optional slot at `public/media/machine-failure.mp4`.
-The panel renders the schematic first and swaps to the video only once the
-browser reports `canplay`; if the file is absent the request 404s, `canplay`
-never fires, and the screen simply never changes. There is no error state to
-recover from. Muted, looping, no controls, no external URL — a conference
-network that cannot reach a CDN must not be able to break the session.
+The incident stage **opens on footage**: fifteen seconds of a real pump package
+going from stable operation to a controlled emergency stop, at
+`public/media/machine-failure.mp4`.
 
-The generation prompt and the constraints the footage has to respect are in
-[`docs/MACHINE_FAILURE_VIDEO_PROMPT.md`](docs/MACHINE_FAILURE_VIDEO_PROMPT.md).
+It has the first beat to itself, at the largest true 16:9 rectangle the
+projector allows, with nothing else on screen. A room cannot watch a machine
+fail and read a sentence at the same time; asked to do both, they do neither.
+The narrative begins on the facilitator's next press, against the still frame
+the clip ends on — machine stopped, warnings active, production interrupted —
+which is the image the session then argues about for forty minutes.
+
+The frame is sized from its **height**, not its width. Driving it from the width
+lets `max-h-full` clamp the height, the aspect ratio loses, and the footage sits
+pillarboxed in a 2.09:1 box on a 1366×768 projector — which is precisely the
+"embedded video player" look this is not. `object-contain` guarantees a
+replacement clip at another ratio letterboxes rather than stretching or
+cropping; what `cover` would crop from a shot of a machine is the machine.
+
+Playback is muted, autoplay, `playsInline`, **once**, no loop, no controls, and
+no browser chrome around them. Going Back to that beat replays it.
+
+**And none of it is load-bearing.** `MachineFootage` renders the schematic
+first and swaps only once the browser reports `canplay`. With no file the
+request 404s, `canplay` never fires, and the beat is the machine drawn instead
+of filmed. There is no error state to recover from, and no external URL — a
+conference network that cannot reach a CDN must not be able to break a session.
+
+The schematic that accompanies the narrative beats follows the story rather than
+marching monotonically: the incident opens in the present tense, rewinds several
+weeks, and returns. `INCIDENT_MACHINE_STEP` maps each line to its condition, so
+"a critical production machine has failed" is never captioned *Normal
+operation*.
+
+Encode replacements for delivery — the ffmpeg command, and why the audio track
+and cover-art stream go, are in
+[`docs/MACHINE_FAILURE_VIDEO_PROMPT.md`](docs/MACHINE_FAILURE_VIDEO_PROMPT.md)
+along with the generation prompt. The committed file is 5.9 MB, down from a
+15 MB raw export with no visible difference.
 
 ---
 
@@ -475,9 +541,18 @@ server that is not on Postgres.
 
 ### What was verified in a browser
 
-- **Every projector frame** — all 56 stage/beat combinations — measured for
+- **Every projector frame** — all 23 stages, beat by beat — measured for
   horizontal overflow, vertical overflow and elements crossing the viewport
-  edge, at both **1366×768** and **1920×1080**. Zero problems at either.
+  edge, at both **1366×768** and **1920×1080**. Zero problems at either. (The
+  sweep does flag the fired-role tags on the twist screen: they animate off the
+  right edge deliberately, and were confirmed at effective opacity 0 inside an
+  `overflow-hidden` frame with `scrollWidth === innerWidth`.)
+- **The Back/Next matrix, in the DOM, for all four roles.** Title, title size,
+  every evidence line, the quote, both percentages and the token's zone captured
+  from the rendered page, then compared after next/back, again after
+  next/back, and again after a full reload. Byte-identical in all sixteen
+  comparisons — and the title is present in every sampled frame *during* a
+  reveal flight, so identity never disappears mid-animation.
 - **The join-code rule**, at thirteen checkpoints: up on all four decisions, the
   chain question and the final poll; absent on the verdict, the twist, the
   rewind, the system question, the learning reveals, the cost screens and the

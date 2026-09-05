@@ -2,12 +2,12 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { QrCode } from "@/components/ui/QrCode";
-import { INCIDENT_LINES, MACHINE_STEPS } from "@/lib/content/activity";
+import { INCIDENT_LINES, INCIDENT_MACHINE_STEP } from "@/lib/content/activity";
 import { ENTER, Rise, useMotionOff } from "@/lib/motion/primitives";
 import type { PublicSessionState } from "@/lib/types";
 import { joinUrl, PresenceLine } from "./JoinPanel";
 import { AmbientLinework, SignalPulse, WarningWave } from "./scene/Industrial";
-import { MachinePanel } from "./scene/MachinePanel";
+import { MachineFootage, MachineFrame } from "./scene/MachinePanel";
 import { StageFrame } from "./StageFrame";
 
 /* ------------------------------------------------------------------ */
@@ -183,56 +183,91 @@ export function JoinStage({ state, origin }: { state: PublicSessionState; origin
 /* ------------------------------------------------------------------ */
 
 /**
- * The incident, as a scene rather than a wall of text.
+ * The incident: the failure, and then what led to it.
  *
- * Left: the machine — footage if a file has been dropped in, the animated
- * schematic otherwise. It walks its condition sequence in step with the
- * narrative, so the room watches the deterioration described on the right
- * happening on the left. The temporary stabilisation at step five is the beat
- * that does the work: the trace drops back, and then it comes back worse.
+ * Beat 0 is the machine — the footage if a clip has been dropped in, the
+ * animated schematic if not — with the whole stage to itself and nothing to
+ * read. Beats 1 onwards build the narrative beside the schematic, which walks
+ * its condition sequence in step: the room watches the deterioration described
+ * on the right happening on the left. The temporary stabilisation at step five
+ * is the beat that does the work — the trace drops back, and then it returns
+ * worse.
  *
- * Right: the same seven lines, one per beat, unchanged from the script.
+ * Splitting the footage into its own beat is not a layout preference. A room
+ * cannot watch fifteen seconds of a machine failing and take in a sentence at
+ * the same time; asked to do both, they do neither. So the clip gets silence,
+ * and the story starts on the facilitator's next press.
  */
 export function IncidentStage({ beat }: { beat: number }) {
-  const step = Math.min(MACHINE_STEPS.length - 1, beat);
+  const showing = Math.max(0, Math.min(INCIDENT_LINES.length - 1, beat - 1));
+  const step = INCIDENT_MACHINE_STEP[showing] ?? 0;
+  const footage = beat === 0;
 
   return (
     <StageFrame className="flex flex-col">
       <div className="flex shrink-0 items-baseline justify-between gap-[2cqw]">
         <span className="stage-eyebrow text-ink-3">The incident</span>
-        <span className="stage-eyebrow text-ink-3 tnum">
-          {String(Math.min(beat + 1, INCIDENT_LINES.length)).padStart(2, "0")} /{" "}
-          {String(INCIDENT_LINES.length).padStart(2, "0")}
-        </span>
+        {footage ? null : (
+          <span className="stage-eyebrow text-ink-3 tnum">
+            {String(Math.min(showing + 1, INCIDENT_LINES.length)).padStart(2, "0")} /{" "}
+            {String(INCIDENT_LINES.length).padStart(2, "0")}
+          </span>
+        )}
       </div>
 
-      {/*
-       * Both columns start at the same line.
-       *
-       * The narrative grows a line per beat and the frame does not, so
-       * centring the two against each other means the machine drifts down the
-       * screen as the story is told. Sharing a top edge keeps the scene still
-       * while the text builds — which is the only thing that should be moving.
-       */}
-      <div className="mt-[2.5cqh] grid min-h-0 flex-1 grid-cols-[minmax(0,46%)_minmax(0,1fr)] items-start gap-[3cqw]">
-        <MachinePanel step={step} replayKey={beat === 0 ? 0 : 1} className="min-h-0 w-full" />
+      <AnimatePresence mode="wait">
+        {footage ? (
+          <motion.div
+            key="footage"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+            className="mt-[2.5cqh] flex min-h-0 flex-1"
+          >
+            {/*
+             * `playKey` is the stage's own identity rather than the beat: the
+             * clip restarts when the facilitator comes back to this screen,
+             * which is how they replay it, and does not restart for anything
+             * else.
+             */}
+            <MachineFootage step={0} playKey={0} className="w-full" />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="narrative"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+            /*
+             * Both columns start at the same line. The narrative grows a line
+             * per beat and the frame does not, so centring the two against each
+             * other would walk the machine down the screen as the story is
+             * told. Sharing a top edge keeps the scene still while the text
+             * builds — which is the only thing that should be moving.
+             */
+            className="mt-[2.5cqh] grid min-h-0 flex-1 grid-cols-[minmax(0,46%)_minmax(0,1fr)] items-start gap-[3cqw]"
+          >
+            <MachineFrame step={step} className="min-h-0 w-full" />
 
-        <div className="flex min-h-0 flex-col">
-          <div className="space-y-[1.8cqh]">
-            {INCIDENT_LINES.slice(0, beat + 1).map((line, i) => (
-              <motion.p
-                key={line}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: i === beat ? 1 : 0.38, y: 0 }}
-                transition={ENTER}
-                className="display-loose text-stage-md"
-              >
-                {line}
-              </motion.p>
-            ))}
-          </div>
-        </div>
-      </div>
+            <div className="flex min-h-0 flex-col">
+              <div className="space-y-[1.8cqh]">
+                {INCIDENT_LINES.slice(0, showing + 1).map((line, i) => (
+                  <motion.p
+                    key={line}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: i === showing ? 1 : 0.38, y: 0 }}
+                    transition={ENTER}
+                    className="display-loose text-stage-md"
+                  >
+                    {line}
+                  </motion.p>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </StageFrame>
   );
 }
